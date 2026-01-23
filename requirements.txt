@@ -1,0 +1,8 @@
+trl
+unsloth
+pandas 
+matplotlib
+transformers
+datasets
+scikit-learn
+wandb
