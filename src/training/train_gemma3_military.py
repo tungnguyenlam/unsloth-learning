@@ -220,7 +220,7 @@ def main():
     num_epochs = args.epochs
     learning_rate = args.learning_rate
     batch_size = args.batch_size
-    gradient_accumulation_steps = args.gradient_accumulation_steps
+    gradient_accumulation_steps = args.grad_accum
     use_qat = not args.no_qat
     skip_gguf = args.skip_gguf
     skip_upload = args.skip_upload
