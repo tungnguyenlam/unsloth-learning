@@ -1,9 +1,44 @@
+# ============================================
+# Core Dependencies
+# ============================================
+torch>=2.0.0
+transformers>=4.55.0
+datasets>=4.0.0
+accelerate>=0.25.0
+pandas
 openpyxl
-trl
+
+# ============================================
+# Fine-tuning (QLoRA/LoRA)
+# ============================================
 unsloth
-pandas 
+trl>=0.22.0
+peft>=0.10.0
+bitsandbytes>=0.42.0
+
+# ============================================
+# Quantization Aware Training (QAT)
+# ============================================
+torchao>=0.14.0
+# fbgemm-gpu-genai>=1.4.2  # Only needed for CUDA, may not work on all systems
+
+# ============================================
+# Tokenizers & Model Support
+# ============================================
+sentencepiece
+protobuf
+huggingface_hub>=0.34.0
+hf_transfer  # Faster downloads
+
+# ============================================
+# Utilities
+# ============================================
 matplotlib
-transformers
-datasets
 scikit-learn
 wandb
+tqdm
+
+# ============================================
+# Inference & Export
+# ============================================
+# gguf  # For GGUF export (installed automatically by unsloth)
