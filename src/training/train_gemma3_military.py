@@ -52,7 +52,7 @@ TARGET_MODULES = [
 # Training Configuration (Conservative to prevent catastrophic forgetting)
 LEARNING_RATE = 1e-5  # Very conservative for domain adaptation
 NUM_EPOCHS = 1  # Start with 1 epoch to test
-BATCH_SIZE = 4  # T4 can handle this easily (only using 5GB with batch=1)
+BATCH_SIZE = 1  # T4 can handle this easily (only using 5GB with batch=1)
 GRADIENT_ACCUMULATION_STEPS = 4  # Effective batch size = 16
 WARMUP_STEPS = 50
 MAX_STEPS = None  # Set to a number for testing (e.g., 100)
