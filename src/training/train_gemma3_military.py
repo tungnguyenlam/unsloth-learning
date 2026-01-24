@@ -170,6 +170,14 @@ def parse_args():
         help="Learning rate"
     )
     parser.add_argument(
+        "--batch-size", type=int, default=BATCH_SIZE,
+        help="Per-device training batch size"
+    )
+    parser.add_argument(
+        "--grad-accum", type=int, default=GRADIENT_ACCUMULATION_STEPS,
+        help="Gradient accumulation steps (effective batch = batch_size * grad_accum)"
+    )
+    parser.add_argument(
         "--no-qat", action="store_true",
         help="Disable Quantization Aware Training"
     )
@@ -211,6 +219,8 @@ def main():
     max_steps = args.max_steps
     num_epochs = args.epochs
     learning_rate = args.learning_rate
+    batch_size = args.batch_size
+    gradient_accumulation_steps = args.gradient_accumulation_steps
     use_qat = not args.no_qat
     skip_gguf = args.skip_gguf
     skip_upload = args.skip_upload
@@ -227,6 +237,7 @@ def main():
     print(f"  - Epochs: {num_epochs}")
     print(f"  - Learning rate: {learning_rate}")
     print(f"  - Max steps: {max_steps or 'None (full training)'}")
+    print(f"  - Batch size: {batch_size} x {gradient_accumulation_steps} = {batch_size * gradient_accumulation_steps} (effective)")
     print(f"  - QAT enabled: {use_qat}")
     print(f"  - Wandb tracking: {use_wandb}")
     print(f"  - Eval split: {eval_split*100:.1f}%")
@@ -343,9 +354,9 @@ def main():
                 "lora_alpha": LORA_ALPHA,
                 "learning_rate": learning_rate,
                 "epochs": num_epochs,
-                "batch_size": BATCH_SIZE,
-                "gradient_accumulation_steps": GRADIENT_ACCUMULATION_STEPS,
-                "effective_batch_size": BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS,
+                "batch_size": batch_size,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
+                "effective_batch_size": batch_size * gradient_accumulation_steps,
                 "use_qat": use_qat,
                 "qat_scheme": QAT_SCHEME if use_qat else None,
                 "eval_split": eval_split,
@@ -355,8 +366,8 @@ def main():
     
     trainer_args = SFTConfig(
         dataset_text_field="text",
-        per_device_train_batch_size=BATCH_SIZE,
-        gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
+        per_device_train_batch_size=batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
         warmup_steps=WARMUP_STEPS,
         learning_rate=learning_rate,
         num_train_epochs=num_epochs,
@@ -403,7 +414,7 @@ def main():
     print("\n[STEP 6] Starting training...")
     print(f"  - Learning Rate: {learning_rate}")
     print(f"  - Epochs: {num_epochs}")
-    print(f"  - Batch Size: {BATCH_SIZE} x {GRADIENT_ACCUMULATION_STEPS} = {BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS}")
+    print(f"  - Batch Size: {batch_size} x {gradient_accumulation_steps} = {batch_size * gradient_accumulation_steps}")
     print(f"  - LoRA Rank: {LORA_R}")
     
     # Show GPU memory before training
