@@ -28,6 +28,7 @@ import torch
 import subprocess
 import time
 import argparse
+import wandb
 from datasets import Dataset
 
 # ============================================================================
@@ -73,6 +74,13 @@ HF_MODEL_NAME = "gemma3-4b-military-korean"
 
 # Ollama Configuration
 OLLAMA_MODEL_NAME = "gemma3-military"
+
+# Weights & Biases Configuration
+WANDB_PROJECT = "gemma3-military-finetune"
+WANDB_RUN_NAME = None  # Auto-generated if None
+
+# Evaluation Configuration
+EVAL_SPLIT = 0.05  # 5% of data for validation
 
 # Data Configuration - Default path (can be overridden via --data-path)
 # Tries to find data relative to script location or current working directory
@@ -173,6 +181,22 @@ def parse_args():
         "--skip-upload", action="store_true",
         help="Skip HuggingFace upload"
     )
+    parser.add_argument(
+        "--wandb-project", type=str, default=WANDB_PROJECT,
+        help="Weights & Biases project name for tracking"
+    )
+    parser.add_argument(
+        "--wandb-run-name", type=str, default=WANDB_RUN_NAME,
+        help="Weights & Biases run name (auto-generated if not provided)"
+    )
+    parser.add_argument(
+        "--eval-split", type=float, default=EVAL_SPLIT,
+        help="Fraction of data to use for evaluation (0.0-1.0, default 0.05)"
+    )
+    parser.add_argument(
+        "--no-wandb", action="store_true",
+        help="Disable Weights & Biases tracking"
+    )
     return parser.parse_args()
 
 
@@ -190,6 +214,10 @@ def main():
     use_qat = not args.no_qat
     skip_gguf = args.skip_gguf
     skip_upload = args.skip_upload
+    wandb_project = args.wandb_project
+    wandb_run_name = args.wandb_run_name
+    eval_split = args.eval_split
+    use_wandb = not args.no_wandb
     
     print("="*60)
     print("Military Vocabulary Fine-tuning for Gemma-3-4b-it")
@@ -200,6 +228,8 @@ def main():
     print(f"  - Learning rate: {learning_rate}")
     print(f"  - Max steps: {max_steps or 'None (full training)'}")
     print(f"  - QAT enabled: {use_qat}")
+    print(f"  - Wandb tracking: {use_wandb}")
+    print(f"  - Eval split: {eval_split*100:.1f}%")
     
     # Verify data exists
     if not os.path.exists(data_path):
@@ -275,10 +305,23 @@ def main():
         batched=True,
     )
     
+    # Split dataset for training and evaluation
+    if eval_split > 0:
+        print(f"\n  Splitting dataset: {(1-eval_split)*100:.1f}% train, {eval_split*100:.1f}% eval")
+        split_dataset = dataset.train_test_split(test_size=eval_split, seed=3407)
+        train_dataset = split_dataset["train"]
+        eval_dataset = split_dataset["test"]
+        print(f"  - Training samples: {len(train_dataset)}")
+        print(f"  - Evaluation samples: {len(eval_dataset)}")
+    else:
+        train_dataset = dataset
+        eval_dataset = None
+        print(f"  - Training samples: {len(train_dataset)} (no eval split)")
+    
     # Print sample
     print("\n  Sample training text (truncated):")
     print("-" * 40)
-    print(dataset[0]['text'][:500] + "...")
+    print(train_dataset[0]['text'][:500] + "...")
     print("-" * 40)
     
     # ========================================================================
@@ -287,6 +330,28 @@ def main():
     print("\n[STEP 5] Setting up SFT Trainer...")
     
     from trl import SFTTrainer, SFTConfig
+    
+    # Initialize wandb for tracking
+    if use_wandb:
+        wandb.init(
+            project=wandb_project,
+            name=wandb_run_name,
+            config={
+                "model_name": MODEL_NAME,
+                "max_seq_length": MAX_SEQ_LENGTH,
+                "lora_r": LORA_R,
+                "lora_alpha": LORA_ALPHA,
+                "learning_rate": learning_rate,
+                "epochs": num_epochs,
+                "batch_size": BATCH_SIZE,
+                "gradient_accumulation_steps": GRADIENT_ACCUMULATION_STEPS,
+                "effective_batch_size": BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS,
+                "use_qat": use_qat,
+                "qat_scheme": QAT_SCHEME if use_qat else None,
+                "eval_split": eval_split,
+            }
+        )
+        print(f"  ✓ Wandb initialized: {wandb.run.name}")
     
     trainer_args = SFTConfig(
         dataset_text_field="text",
@@ -301,9 +366,15 @@ def main():
         lr_scheduler_type="cosine",
         seed=3407,
         output_dir=OUTPUT_DIR,
-        report_to="none",
+        report_to="wandb" if use_wandb else "none",
         save_steps=500,
         save_total_limit=2,
+        # Evaluation settings
+        eval_strategy="steps" if eval_dataset is not None else "no",
+        eval_steps=100 if eval_dataset is not None else None,
+        load_best_model_at_end=True if eval_dataset is not None else False,
+        metric_for_best_model="eval_loss" if eval_dataset is not None else None,
+        greater_is_better=False,  # Lower loss is better
     )
     
     if max_steps is not None:
@@ -312,8 +383,8 @@ def main():
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
-        train_dataset=dataset,
-        eval_dataset=None,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         args=trainer_args,
     )
     
@@ -484,6 +555,11 @@ def main():
     # ========================================================================
     # DONE
     # ========================================================================
+    # Finish wandb tracking
+    if use_wandb:
+        wandb.finish()
+        print("  ✓ Wandb run completed")
+    
     print("\n" + "="*60)
     print("TRAINING COMPLETE!")
     print("="*60)
@@ -491,6 +567,10 @@ def main():
     print(f"  - LoRA adapters: {LORA_MODEL_DIR}/")
     print(f"  - GGUF model:    {GGUF_MODEL_DIR}/")
     print(f"  - Logs:          {OUTPUT_DIR}/")
+    
+    if use_wandb:
+        print(f"\nWandb Dashboard:")
+        print(f"  - https://wandb.ai/{wandb_project}")
     
     if hf_token:
         print(f"\nHuggingFace Links:")
