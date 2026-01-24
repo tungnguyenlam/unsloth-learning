@@ -257,12 +257,10 @@ def main():
     # ========================================================================
     print("\n[STEP 3] Setting up Gemma 3 chat template...")
     
-    from unsloth.chat_templates import get_chat_template
-    
-    tokenizer = get_chat_template(
-        tokenizer,
-        chat_template="gemma-3-it",  # Gemma 3 Instruct template
-    )
+    # Gemma 3 already has the chat template in the tokenizer
+    # No need to call get_chat_template - just use the built-in template
+    # The template uses: <start_of_turn>user\n...<end_of_turn>\n<start_of_turn>model\n...<end_of_turn>
+    print("  ✓ Using built-in Gemma 3 chat template")
     
     # ========================================================================
     # STEP 4: Load and Prepare Data
@@ -271,11 +269,7 @@ def main():
     
     dataset = load_training_data(data_path)
     
-    # Convert to Unsloth format
-    from unsloth.chat_templates import standardize_data_formats
-    dataset = standardize_data_formats(dataset)
-    
-    # Apply chat template
+    # Apply chat template to format conversations
     dataset = dataset.map(
         lambda x: apply_chat_template(x, tokenizer),
         batched=True,
