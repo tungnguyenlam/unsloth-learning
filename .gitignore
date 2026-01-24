@@ -1,5 +1,6 @@
 # Data folder
 ./data/
+data/
 
 # No push
 *no_push*
