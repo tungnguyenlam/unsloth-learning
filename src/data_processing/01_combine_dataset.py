@@ -21,7 +21,7 @@ print(dataset_files_list)
 
 df = pd.read_excel(os.path.join(dataset_dir, dataset_files_list[0]), index_col=0)
 
-for i in range(len(dataset_files_list)):
+for i in range(1, len(dataset_files_list)):
     df_tem = pd.read_excel(os.path.join(dataset_dir, dataset_files_list[i]), index_col=0)
     df = pd.concat([df, df_tem], ignore_index=True)
 
