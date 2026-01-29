@@ -197,7 +197,7 @@ def main():
     trainer_args = SFTConfig(
         dataset_text_field="text",
         per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=args.batch_size * args.grad_accum,  # Larger batch for eval (no gradients)
+        per_device_eval_batch_size=args.batch_size * 2,  # Safer eval batch size to avoid spikes (was * grad_accum)
         gradient_accumulation_steps=args.grad_accum,
         warmup_steps=WARMUP_STEPS,
         learning_rate=args.learning_rate,
