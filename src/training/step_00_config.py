@@ -165,6 +165,15 @@ def get_saved_run_name() -> str:
     return generate_run_name()
 
 
+def get_results_dir_for_run(run_name: str = None) -> str:
+    """Get results directory organized by run name."""
+    if run_name is None:
+        run_name = get_saved_run_name()
+    run_results_dir = os.path.join(RESULTS_DIR, run_name)
+    os.makedirs(run_results_dir, exist_ok=True)
+    return run_results_dir
+
+
 def round_to_bucket(length: int, buckets: list = None) -> int:
     if buckets is None:
         buckets = [128, 256, 512, 768, 1024, 1536, 2048, 3072, 4096]

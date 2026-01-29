@@ -23,8 +23,9 @@ if TESTING_DIR not in sys.path:
     sys.path.insert(0, TESTING_DIR)
 
 from step_00_config import (
-    GGUF_MODEL_DIR, TEST1_DATA_PATH, RESULTS_DIR,
-    ensure_dirs, get_base_parser, get_max_seq_length, get_saved_run_name
+    GGUF_MODEL_DIR, TEST1_DATA_PATH,
+    ensure_dirs, get_base_parser, get_max_seq_length, get_saved_run_name,
+    get_results_dir_for_run
 )
 
 
@@ -259,6 +260,9 @@ def main():
     tokenizer = GGUFTokenizerWrapper()
     print("  Model loaded successfully")
     
+    # Get run-specific results directory
+    results_dir = get_results_dir_for_run(run_name)
+    
     gguf_test1_results = None
     gguf_test2_results = None
     
@@ -268,7 +272,7 @@ def main():
         if not os.path.exists(TEST1_DATA_PATH):
             print(f"  WARNING: Test data not found: {TEST1_DATA_PATH}")
         else:
-            test1_output = os.path.join(RESULTS_DIR, f"gguf_test1_{run_name}.json")
+            test1_output = os.path.join(results_dir, f"gguf_test1_{run_name}.json")
             gguf_test1_results = run_test1_gguf(model, tokenizer, TEST1_DATA_PATH, test1_output, run_name=f"gguf_{run_name}")
     else:
         print("\n[2/4] Skipping Test 1")
@@ -276,7 +280,7 @@ def main():
     # Test 2
     if not args.skip_test2:
         print("\n[3/4] Running Test 2: Stability Check (KoMMLU)...")
-        test2_output = os.path.join(RESULTS_DIR, f"gguf_test2_{run_name}.json")
+        test2_output = os.path.join(results_dir, f"gguf_test2_{run_name}.json")
         gguf_test2_results = run_test2_gguf(model, tokenizer, test2_output, run_name=f"gguf_{run_name}")
     else:
         print("\n[3/4] Skipping Test 2")
@@ -285,8 +289,8 @@ def main():
     if not args.skip_test3:
         print("\n[4/4] Running Test 3: Quantization Comparison...")
         
-        fp16_test1_path = os.path.join(RESULTS_DIR, f"fp16_test1_{run_name}.json")
-        fp16_test2_path = os.path.join(RESULTS_DIR, f"fp16_test2_{run_name}.json")
+        fp16_test1_path = os.path.join(results_dir, f"fp16_test1_{run_name}.json")
+        fp16_test2_path = os.path.join(results_dir, f"fp16_test2_{run_name}.json")
         
         if not os.path.exists(fp16_test1_path) or not os.path.exists(fp16_test2_path):
             print("  WARNING: FP16 results not found. Run src/training/step_03_test_fp16.py first")
@@ -294,7 +298,7 @@ def main():
             print("  WARNING: GGUF results not available. Cannot compare.")
         else:
             import test3_quantization_loss as test3
-            test3_output = os.path.join(RESULTS_DIR, f"test3_{run_name}.json")
+            test3_output = os.path.join(results_dir, f"test3_{run_name}.json")
             
             with open(fp16_test1_path, 'r') as f:
                 fp16_test1 = json.load(f)
@@ -308,7 +312,7 @@ def main():
     print("\n" + "=" * 60)
     print("STEP 05 COMPLETE")
     print("=" * 60)
-    print(f"\nResults saved to: {RESULTS_DIR}/")
+    print(f"\nResults saved to: {results_dir}/")
     print("\nNext: python src/training/step_06_upload.py (optional)")
 
 

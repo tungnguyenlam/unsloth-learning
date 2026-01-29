@@ -204,10 +204,17 @@ def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokeniz
         
         # Decode each output in batch
         for j, output in enumerate(outputs):
-            input_len = batch_inputs['input_ids'][j].shape[0]
-            resp = finetuned_tokenizer.decode(output[input_len:], skip_special_tokens=True)
-            ft_responses.append(resp.strip())
-            ft_predictions.append(extract_answer(resp) if extract_answer(resp) is not None else -1)
+            # With padding, we need to find actual input length using attention_mask
+            actual_input_len = batch_inputs['attention_mask'][j].sum().item()
+            # Slice from actual input length to get only generated tokens
+            generated_tokens = output[actual_input_len:]
+            resp = finetuned_tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+            ft_responses.append(resp)
+            ans = extract_answer(resp)
+            ft_predictions.append(ans if ans is not None else -1)
+            # Debug: print first few
+            if i == 0 and j < 2:
+                print(f"    Sample {j}: Response='{resp[:50]}...' -> Pred={ans}")
     
     ft_accuracy = compute_accuracy(ft_predictions, ground_truths)
     ft_by_subject = compute_accuracy_by_subject(ft_predictions, ground_truths, subjects)
@@ -257,9 +264,12 @@ def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokeniz
             
             # Decode each output in batch
             for j, output in enumerate(outputs):
-                input_len = batch_inputs['input_ids'][j].shape[0]
-                resp = base_tokenizer.decode(output[input_len:], skip_special_tokens=True)
-                base_predictions.append(extract_answer(resp) if extract_answer(resp) is not None else -1)
+                # With padding, we need to find actual input length using attention_mask
+                actual_input_len = batch_inputs['attention_mask'][j].sum().item()
+                generated_tokens = output[actual_input_len:]
+                resp = base_tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+                ans = extract_answer(resp)
+                base_predictions.append(ans if ans is not None else -1)
         
         base_accuracy = compute_accuracy(base_predictions, ground_truths)
         base_by_subject = compute_accuracy_by_subject(base_predictions, ground_truths, subjects)

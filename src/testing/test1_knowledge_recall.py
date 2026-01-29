@@ -172,9 +172,11 @@ def run_test(model, tokenizer, test_data_path: str = DEFAULT_TEST_DATA, output_p
         
         # Decode each output in batch
         for j, output in enumerate(outputs):
-            input_len = batch_inputs['input_ids'][j].shape[0]
-            pred = tokenizer.decode(output[input_len:], skip_special_tokens=True)
-            predictions.append(pred.strip())
+            # With padding, use attention_mask to find actual input length
+            actual_input_len = batch_inputs['attention_mask'][j].sum().item()
+            generated_tokens = output[actual_input_len:]
+            pred = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+            predictions.append(pred)
     
     print("\nComputing metrics...")
     bertscore = compute_bertscore(predictions, ground_truths)

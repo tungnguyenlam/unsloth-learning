@@ -22,8 +22,9 @@ if TESTING_DIR not in sys.path:
 
 from step_00_config import (
     MODEL_NAME, LOAD_IN_4BIT,
-    LORA_MODEL_DIR, TEST1_DATA_PATH, RESULTS_DIR,
-    ensure_dirs, get_base_parser, get_max_seq_length, get_saved_run_name
+    LORA_MODEL_DIR, TEST1_DATA_PATH,
+    ensure_dirs, get_base_parser, get_max_seq_length, get_saved_run_name,
+    get_results_dir_for_run
 )
 
 
@@ -45,6 +46,10 @@ def main():
     print(f"Batch Size: {args.batch_size}")
     
     ensure_dirs()
+    
+    # Get run-specific results directory
+    results_dir = get_results_dir_for_run(run_name)
+    print(f"Results Dir: {results_dir}")
     
     if not os.path.exists(LORA_MODEL_DIR):
         print(f"ERROR: LoRA model not found at: {LORA_MODEL_DIR}")
@@ -72,7 +77,7 @@ def main():
             print("  Run src/training/step_01_prepare_data.py first")
         else:
             import test1_knowledge_recall as test1
-            test1_output = os.path.join(RESULTS_DIR, f"fp16_test1_{run_name}.json")
+            test1_output = os.path.join(results_dir, f"fp16_test1_{run_name}.json")
             test1.run_test(model, tokenizer, TEST1_DATA_PATH, test1_output, run_name=f"fp16_{run_name}", batch_size=args.batch_size)
     else:
         print("\n[2/3] Skipping Test 1")
@@ -81,7 +86,7 @@ def main():
     if not args.skip_test2:
         print("\n[3/3] Running Test 2: Stability Check (KoMMLU)...")
         import test2_stability_check as test2
-        test2_output = os.path.join(RESULTS_DIR, f"fp16_test2_{run_name}.json")
+        test2_output = os.path.join(results_dir, f"fp16_test2_{run_name}.json")
         test2.run_test(model, tokenizer, output_path=test2_output, run_name=f"fp16_{run_name}", batch_size=args.batch_size)
     else:
         print("\n[3/3] Skipping Test 2")
@@ -89,7 +94,7 @@ def main():
     print("\n" + "=" * 60)
     print("STEP 03 COMPLETE")
     print("=" * 60)
-    print(f"\nResults saved to: {RESULTS_DIR}/")
+    print(f"\nResults saved to: {results_dir}/")
     print("\nNext: python src/training/step_04_export_gguf.py")
 
 
