@@ -177,7 +177,6 @@ def main():
     parser.add_argument("--skip-test1", action="store_true")
     parser.add_argument("--skip-test2", action="store_true")
     parser.add_argument("--skip-test3", action="store_true")
-    parser.add_argument("--skip-test3", action="store_true")
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size (ignored for GGUF inference)")
     parser.add_argument("--model", type=str, default=None, help="Explicitly specify GGUF model file path")
     args = parser.parse_args()
