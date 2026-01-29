@@ -9,7 +9,7 @@ import argparse
 # Model Configuration
 MODEL_NAME = "unsloth/gemma-3-4b-it"
 MAX_SEQ_LENGTH_DEFAULT = 2048  # Fallback if auto-detect not run
-LOAD_IN_4BIT = False  # Load full precision, then apply QAT fake quantization
+LOAD_IN_4BIT = True  # QLoRA: Load base model in 4-bit quantization
 
 # LoRA Configuration
 LORA_R = 16
@@ -28,8 +28,8 @@ GRADIENT_ACCUMULATION_STEPS = 4
 WARMUP_STEPS = 50
 MAX_STEPS = None
 
-# QAT Configuration
-USE_QAT = True
+# QAT Configuration (disabled - using QLoRA instead per assignment requirements)
+USE_QAT = False
 QAT_SCHEME = "int4"
 
 # Directory Configuration
