@@ -170,6 +170,7 @@ def main():
     parser.add_argument("--skip-test1", action="store_true")
     parser.add_argument("--skip-test2", action="store_true")
     parser.add_argument("--skip-test3", action="store_true")
+    parser.add_argument("--batch-size", type=int, default=1, help="Batch size (ignored for GGUF inference)")
     args = parser.parse_args()
     
     max_seq_length = get_max_seq_length()
@@ -183,7 +184,14 @@ def main():
     
     ensure_dirs()
     
-    gguf_files = [f for f in os.listdir(GGUF_MODEL_DIR) if f.endswith('.gguf')] if os.path.exists(GGUF_MODEL_DIR) else []
+    if os.path.exists(GGUF_MODEL_DIR):
+        print(f"Checking directory: {GGUF_MODEL_DIR}")
+        print(f"Contents: {os.listdir(GGUF_MODEL_DIR)}")
+        gguf_files = [f for f in os.listdir(GGUF_MODEL_DIR) if f.endswith('.gguf')]
+    else:
+        print(f"Directory not found: {GGUF_MODEL_DIR}")
+        gguf_files = []
+
     if not gguf_files:
         print(f"ERROR: No GGUF files found in: {GGUF_MODEL_DIR}")
         print("Run src/training/step_04_export_gguf.py first")
