@@ -43,3 +43,4 @@ tqdm
 # ============================================
 # gguf  # For GGUF export (installed automatically by unsloth)
 bert_score>=0.3.13
+llama-cpp-python>=0.2.20

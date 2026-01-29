@@ -30,7 +30,13 @@ from step_00_config import (
 
 class GGUFModelWrapper:
     def __init__(self, model_path: str, n_ctx: int = 2048):
-        from llama_cpp import Llama
+        try:
+            from llama_cpp import Llama
+        except ImportError:
+            print("\nERROR: llama-cpp-python not installed.")
+            print("Please run: pip install llama-cpp-python")
+            sys.exit(1)
+            
         self.llm = Llama(
             model_path=model_path,
             n_ctx=n_ctx,
@@ -203,7 +209,22 @@ def main():
         print("Run src/training/step_04_export_gguf.py first")
         sys.exit(1)
     
-    gguf_path = gguf_files[0]
+    # Filter out mmproj files (multimodal projectors)
+    valid_gguf_files = [f for f in gguf_files if "mmproj" not in f]
+    
+    if not valid_gguf_files:
+        print(f"ERROR: Only mmproj files found: {gguf_files}")
+        print("The main model GGUF seems to be missing.")
+        sys.exit(1)
+        
+    # Prefer Q4_K_M or similar if multiple exist
+    selected_gguf = valid_gguf_files[0]
+    for f in valid_gguf_files:
+        if "Q4" in f:
+            selected_gguf = f
+            break
+            
+    gguf_path = selected_gguf
     print(f"\nUsing GGUF model: {gguf_path}")
     
     # Load Model
