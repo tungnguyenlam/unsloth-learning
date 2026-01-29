@@ -70,6 +70,7 @@ def main():
     parser.add_argument("--no-wandb", action="store_true")
     parser.add_argument("--wandb-run-name", type=str, default=None, help="Override auto-generated wandb run name")
     parser.add_argument("--eval-split", type=float, default=EVAL_SPLIT)
+    parser.add_argument("--no-grad-ckpt", action="store_true", help="Disable gradient checkpointing for faster training (uses more VRAM)")
     args = parser.parse_args()
     
     # Determine QAT usage: CLI override > Config default
@@ -81,6 +82,7 @@ def main():
         use_qat = USE_QAT
     
     use_wandb = not args.no_wandb
+    use_grad_ckpt = not args.no_grad_ckpt
     
     max_seq_length = args.max_seq_length or get_max_seq_length()
     
@@ -102,6 +104,7 @@ def main():
     print(f"  Learning Rate:  {args.learning_rate}")
     print(f"  Batch Size:     {args.batch_size} x {args.grad_accum} = {args.batch_size * args.grad_accum}")
     print(f"  QAT:            {use_qat}")
+    print(f"  Grad Ckpt:      {use_grad_ckpt}")
     print(f"  Wandb:          {use_wandb}")
     
     # Step 1: Load Model (use FastModel like in working notebook)
@@ -124,7 +127,7 @@ def main():
         "lora_alpha": LORA_ALPHA,
         "lora_dropout": LORA_DROPOUT,
         "bias": "none",
-        "use_gradient_checkpointing": "unsloth",
+        "use_gradient_checkpointing": "unsloth" if use_grad_ckpt else False,
         "random_state": 3407,
         "use_rslora": False,
         "loftq_config": None,
@@ -216,7 +219,7 @@ def main():
         load_best_model_at_end=True if eval_dataset is not None else False,
         metric_for_best_model="eval_loss" if eval_dataset is not None else None,
         greater_is_better=False,
-        gradient_checkpointing=True,  # Enable gradient checkpointing in Trainer
+        gradient_checkpointing=use_grad_ckpt,  # Controlled via --no-grad-ckpt flag
     )
     
     if args.max_steps is not None:
