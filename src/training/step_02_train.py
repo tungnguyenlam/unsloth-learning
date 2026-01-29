@@ -65,13 +65,21 @@ def main():
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument("--grad-accum", type=int, default=GRADIENT_ACCUMULATION_STEPS)
     parser.add_argument("--max-seq-length", type=int, default=None, help="Override auto-detected max_seq_length")
-    parser.add_argument("--no-qat", action="store_true")
+    parser.add_argument("--qat", action="store_true", help="Force enable QAT")
+    parser.add_argument("--no-qat", action="store_true", help="Force disable QAT")
     parser.add_argument("--no-wandb", action="store_true")
     parser.add_argument("--wandb-run-name", type=str, default=None, help="Override auto-generated wandb run name")
     parser.add_argument("--eval-split", type=float, default=EVAL_SPLIT)
     args = parser.parse_args()
     
-    use_qat = not args.no_qat
+    # Determine QAT usage: CLI override > Config default
+    if args.qat:
+        use_qat = True
+    elif args.no_qat:
+        use_qat = False
+    else:
+        use_qat = USE_QAT
+    
     use_wandb = not args.no_wandb
     
     max_seq_length = args.max_seq_length or get_max_seq_length()
