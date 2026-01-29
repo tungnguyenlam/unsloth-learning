@@ -169,16 +169,22 @@ def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokeniz
     ground_truths = [d["answer"] for d in test_data]
     subjects = [d["subject"] for d in test_data]
     
+    # Wrap tokenizer with Gemma-3 chat template for text-only inference
+    from unsloth.chat_templates import get_chat_template
+    inference_tokenizer = get_chat_template(finetuned_tokenizer, chat_template="gemma-3")
+    
     print("\nEvaluating fine-tuned model...")
     ft_predictions = []
     ft_responses = []
     for q in tqdm(questions, desc="Fine-tuned"):
         messages = [{"role": "user", "content": q}]
-        inputs = finetuned_tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=True, return_tensors="pt", return_dict=True
-        ).to(finetuned_model.device)
-        outputs = finetuned_model.generate(**inputs, max_new_tokens=16, do_sample=False, pad_token_id=finetuned_tokenizer.eos_token_id)
-        resp = finetuned_tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+        # Apply chat template to get text, then tokenize separately
+        prompt = inference_tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=False
+        )
+        inputs = inference_tokenizer(prompt, return_tensors="pt").to(finetuned_model.device)
+        outputs = finetuned_model.generate(**inputs, max_new_tokens=16, do_sample=False, pad_token_id=inference_tokenizer.eos_token_id)
+        resp = inference_tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
         ft_responses.append(resp.strip())
         ft_predictions.append(extract_answer(resp) if extract_answer(resp) is not None else -1)
     
@@ -198,14 +204,17 @@ def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokeniz
     
     if base_model is not None:
         print("\nEvaluating base model...")
+        # Wrap base tokenizer with Gemma-3 chat template
+        base_inference_tokenizer = get_chat_template(base_tokenizer, chat_template="gemma-3")
         base_predictions = []
         for q in tqdm(questions, desc="Base model"):
             messages = [{"role": "user", "content": q}]
-            inputs = base_tokenizer.apply_chat_template(
-                messages, add_generation_prompt=True, tokenize=True, return_tensors="pt", return_dict=True
-            ).to(base_model.device)
-            outputs = base_model.generate(**inputs, max_new_tokens=16, do_sample=False, pad_token_id=base_tokenizer.eos_token_id)
-            resp = base_tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+            prompt = base_inference_tokenizer.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False
+            )
+            inputs = base_inference_tokenizer(prompt, return_tensors="pt").to(base_model.device)
+            outputs = base_model.generate(**inputs, max_new_tokens=16, do_sample=False, pad_token_id=base_inference_tokenizer.eos_token_id)
+            resp = base_inference_tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
             base_predictions.append(extract_answer(resp) if extract_answer(resp) is not None else -1)
         
         base_accuracy = compute_accuracy(base_predictions, ground_truths)
