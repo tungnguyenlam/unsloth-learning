@@ -31,6 +31,7 @@ def main():
     parser = get_base_parser("Step 03: Test FP16 Model")
     parser.add_argument("--skip-test1", action="store_true")
     parser.add_argument("--skip-test2", action="store_true")
+    parser.add_argument("--batch-size", type=int, default=16, help="Batch size for inference (default: 16)")
     args = parser.parse_args()
     
     max_seq_length = get_max_seq_length()
@@ -41,6 +42,7 @@ def main():
     print("=" * 60)
     print(f"\nRun Name: {run_name}")
     print(f"Max Seq Length: {max_seq_length}")
+    print(f"Batch Size: {args.batch_size}")
     
     ensure_dirs()
     
@@ -71,7 +73,7 @@ def main():
         else:
             import test1_knowledge_recall as test1
             test1_output = os.path.join(RESULTS_DIR, f"fp16_test1_{run_name}.json")
-            test1.run_test(model, tokenizer, TEST1_DATA_PATH, test1_output, run_name=f"fp16_{run_name}")
+            test1.run_test(model, tokenizer, TEST1_DATA_PATH, test1_output, run_name=f"fp16_{run_name}", batch_size=args.batch_size)
     else:
         print("\n[2/3] Skipping Test 1")
     
@@ -80,7 +82,7 @@ def main():
         print("\n[3/3] Running Test 2: Stability Check (KoMMLU)...")
         import test2_stability_check as test2
         test2_output = os.path.join(RESULTS_DIR, f"fp16_test2_{run_name}.json")
-        test2.run_test(model, tokenizer, output_path=test2_output, run_name=f"fp16_{run_name}")
+        test2.run_test(model, tokenizer, output_path=test2_output, run_name=f"fp16_{run_name}", batch_size=args.batch_size)
     else:
         print("\n[3/3] Skipping Test 2")
     
