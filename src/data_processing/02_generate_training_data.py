@@ -336,7 +336,7 @@ def main():
         raise ValueError("Please run this script from the unsloth-learning directory")
     
     base_dir = cwd
-    data_dir = os.path.join(base_dir, "data", "data_cleaned")
+    data_dir = os.path.join(base_dir, "data", "training_data")
     
     # Load dataset
     input_path = os.path.join(data_dir, "dataset.csv")

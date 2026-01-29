@@ -4,11 +4,11 @@ import pandas as pd
 cwd = os.getcwd()
 
 if not cwd.endswith("unsloth-learning"):
-    raise VallueError("Please run this notebook in the unsloth-learning directory")
+    raise ValueError("Please run this notebook in the unsloth-learning directory")
 else:
     base_dir = cwd   
 
-save_dir = os.path.join(base_dir, "data", "data_cleaned")
+save_dir = os.path.join(base_dir, "data", "training_data")
 os.makedirs(save_dir, exist_ok=True)
 
 dataset_dir = os.path.join(base_dir, "data/mai_task/military/military_vocab")
@@ -41,10 +41,15 @@ df = df.rename(columns={
     '등록일': 'Registration_Date'
 })
 
+print("Found {} entries.".format(len(df)))
+print(f"Found {df.duplicated().sum()} duplicated entries. Dropping duplicates...")
+
+df = df.drop_duplicates()
+
 df.to_csv(os.path.join(save_dir, "dataset.csv"), index=False)
 
 eval_df = pd.read_excel(os.path.join(base_dir, "data/mai_task/gemma3_evaluation.xlsx"))
 
-output_path_l = os.path.join(save_dir, "gemma3_evaluation.jsonl")
+output_path_l = os.path.join(save_dir, "..", "test_data", "gemma3_evaluation.jsonl")
 
 eval_df.to_json(output_path_l, orient="records", lines=True, force_ascii=False)

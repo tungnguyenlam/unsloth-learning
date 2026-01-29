@@ -1,0 +1,87 @@
+"""
+Step 03: Test FP16 Model
+- Load trained LoRA model
+- Run Test 1: Knowledge Recall
+- Run Test 2: Stability Check (KoMMLU)
+
+Run: python step_03_test_fp16.py
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'testing'))
+
+from step_00_config import (
+    MODEL_NAME, LOAD_IN_4BIT,
+    LORA_MODEL_DIR, TEST1_DATA_PATH, RESULTS_DIR,
+    ensure_dirs, get_base_parser, get_max_seq_length, get_saved_run_name
+)
+
+
+def main():
+    parser = get_base_parser("Step 03: Test FP16 Model")
+    parser.add_argument("--skip-test1", action="store_true")
+    parser.add_argument("--skip-test2", action="store_true")
+    args = parser.parse_args()
+    
+    max_seq_length = get_max_seq_length()
+    run_name = get_saved_run_name()
+    
+    print("=" * 60)
+    print("STEP 03: TEST FP16 MODEL")
+    print("=" * 60)
+    print(f"\nRun Name: {run_name}")
+    print(f"Max Seq Length: {max_seq_length}")
+    
+    ensure_dirs()
+    
+    if not os.path.exists(LORA_MODEL_DIR):
+        print(f"ERROR: LoRA model not found at: {LORA_MODEL_DIR}")
+        print("Run step_02_train.py first")
+        sys.exit(1)
+    
+    # Load Model
+    print("\n[1/3] Loading trained model...")
+    from unsloth import FastLanguageModel
+    
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=LORA_MODEL_DIR,
+        max_seq_length=max_seq_length,
+        load_in_4bit=LOAD_IN_4BIT,
+    )
+    FastLanguageModel.for_inference(model)
+    print("  Model loaded successfully")
+    
+    # Test 1: Knowledge Recall
+    if not args.skip_test1:
+        print("\n[2/3] Running Test 1: Knowledge Recall...")
+        
+        if not os.path.exists(TEST1_DATA_PATH):
+            print(f"  WARNING: Test data not found: {TEST1_DATA_PATH}")
+            print("  Run step_01_prepare_data.py first")
+        else:
+            import test1_knowledge_recall as test1
+            test1_output = os.path.join(RESULTS_DIR, f"fp16_test1_{run_name}.json")
+            test1.run_test(model, tokenizer, TEST1_DATA_PATH, test1_output, run_name=f"fp16_{run_name}")
+    else:
+        print("\n[2/3] Skipping Test 1")
+    
+    # Test 2: Stability Check
+    if not args.skip_test2:
+        print("\n[3/3] Running Test 2: Stability Check (KoMMLU)...")
+        import test2_stability_check as test2
+        test2_output = os.path.join(RESULTS_DIR, f"fp16_test2_{run_name}.json")
+        test2.run_test(model, tokenizer, output_path=test2_output, run_name=f"fp16_{run_name}")
+    else:
+        print("\n[3/3] Skipping Test 2")
+    
+    print("\n" + "=" * 60)
+    print("STEP 03 COMPLETE")
+    print("=" * 60)
+    print(f"\nResults saved to: {RESULTS_DIR}/")
+    print("\nNext: python step_04_export_gguf.py")
+
+
+if __name__ == "__main__":
+    main()

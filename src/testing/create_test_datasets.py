@@ -41,8 +41,8 @@ def main():
     if not cwd.endswith("unsloth-learning"):
         raise ValueError("Please run from unsloth-learning directory")
     
-    data_dir = os.path.join(cwd, "data", "data_cleaned")
-    test_dir = os.path.join(data_dir, "test_datasets")
+    data_dir = os.path.join(cwd, "data", "training_data")
+    test_dir = os.path.join(data_dir, "test_data")
     os.makedirs(test_dir, exist_ok=True)
     
     print("=" * 50)
