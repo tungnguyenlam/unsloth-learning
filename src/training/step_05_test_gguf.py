@@ -176,7 +176,9 @@ def main():
     parser.add_argument("--skip-test1", action="store_true")
     parser.add_argument("--skip-test2", action="store_true")
     parser.add_argument("--skip-test3", action="store_true")
+    parser.add_argument("--skip-test3", action="store_true")
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size (ignored for GGUF inference)")
+    parser.add_argument("--model", type=str, default=None, help="Explicitly specify GGUF model file path")
     args = parser.parse_args()
     
     max_seq_length = get_max_seq_length()
@@ -188,44 +190,68 @@ def main():
     print(f"\nRun Name: {run_name}")
     print(f"Max Seq Length: {max_seq_length}")
     
-    if os.path.exists(GGUF_MODEL_DIR):
-        print(f"Checking directory: {GGUF_MODEL_DIR}")
-        print(f"Contents: {os.listdir(GGUF_MODEL_DIR)}")
-        gguf_files = [os.path.join(GGUF_MODEL_DIR, f) for f in os.listdir(GGUF_MODEL_DIR) if f.endswith('.gguf')]
-    else:
-        print(f"Directory not found: {GGUF_MODEL_DIR}")
-        gguf_files = []
-
-    # Fallback: Check current directory
-    if not gguf_files:
-        print("Checking current directory for GGUF files...")
-        current_dir_files = [f for f in os.listdir('.') if f.endswith('.gguf')]
-        gguf_files = current_dir_files
-        if gguf_files:
-            print(f"Found GGUF file(s) in current directory: {gguf_files}")
-
-    if not gguf_files:
-        print(f"ERROR: No GGUF files found in: {GGUF_MODEL_DIR} or current directory")
-        print("Run src/training/step_04_export_gguf.py first")
-        sys.exit(1)
-    
-    # Filter out mmproj files (multimodal projectors)
-    valid_gguf_files = [f for f in gguf_files if "mmproj" not in f]
-    
-    if not valid_gguf_files:
-        print(f"ERROR: Only mmproj files found: {gguf_files}")
-        print("The main model GGUF seems to be missing.")
-        sys.exit(1)
+    # 1. Use explicit model if provided
+    if args.model:
+        if not os.path.exists(args.model):
+            print(f"ERROR: Specified model file not found: {args.model}")
+            sys.exit(1)
+        gguf_path = args.model
+        print(f"\nUsing specified GGUF model: {gguf_path}")
         
-    # Prefer Q4_K_M or similar if multiple exist
-    selected_gguf = valid_gguf_files[0]
-    for f in valid_gguf_files:
-        if "Q4" in f:
-            selected_gguf = f
-            break
+    else:
+        # 2. Search for models
+        if os.path.exists(GGUF_MODEL_DIR):
+            print(f"Checking directory: {GGUF_MODEL_DIR}")
+            print(f"Contents: {os.listdir(GGUF_MODEL_DIR)}")
+            gguf_files = [os.path.join(GGUF_MODEL_DIR, f) for f in os.listdir(GGUF_MODEL_DIR) if f.endswith('.gguf')]
+        else:
+            print(f"Directory not found: {GGUF_MODEL_DIR}")
+            gguf_files = []
+
+        # Fallback: Check current directory
+        if not gguf_files:
+            print("Checking current directory for GGUF files...")
+            current_dir_files = [f for f in os.listdir('.') if f.endswith('.gguf')]
+            gguf_files = current_dir_files
+            if gguf_files:
+                print(f"Found GGUF file(s) in current directory: {gguf_files}")
+
+        if not gguf_files:
+            print(f"ERROR: No GGUF files found in: {GGUF_MODEL_DIR} or current directory")
+            print("Run src/training/step_04_export_gguf.py first")
+            sys.exit(1)
+        
+        # Filter out mmproj files (multimodal projectors)
+        valid_gguf_files = [f for f in gguf_files if "mmproj" not in f]
+        
+        if not valid_gguf_files:
+            print(f"ERROR: Only mmproj files found: {gguf_files}")
+            print("The main model GGUF seems to be missing.")
+            sys.exit(1)
             
-    gguf_path = selected_gguf
-    print(f"\nUsing GGUF model: {gguf_path}")
+        print(f"\nFound {len(valid_gguf_files)} candidate models: {valid_gguf_files}")
+        
+        # Selection Logic:
+        # 1. Prefer file containing run_name
+        # 2. Prefer newest file (by modification time)
+        
+        # Sort by modification time (newest first)
+        valid_gguf_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        
+        selected_gguf = valid_gguf_files[0]
+        match_source = "newest modified"
+        
+        # Check for run_name match
+        for f in valid_gguf_files:
+            if run_name in f:
+                selected_gguf = f
+                match_source = f"matches run_name '{run_name}'"
+                break
+                
+        gguf_path = selected_gguf
+        print(f"Auto-selected model ({match_source}): {gguf_path}")
+        if len(valid_gguf_files) > 1:
+            print("  (Use --model <path> to specify a different one)")
     
     # Load Model
     print("\n[1/4] Loading GGUF model...")
