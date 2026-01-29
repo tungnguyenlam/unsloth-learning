@@ -205,6 +205,7 @@ def main():
         load_best_model_at_end=True if eval_dataset is not None else False,
         metric_for_best_model="eval_loss" if eval_dataset is not None else None,
         greater_is_better=False,
+        gradient_checkpointing=True,  # Enable gradient checkpointing in Trainer
     )
     
     if args.max_steps is not None:
