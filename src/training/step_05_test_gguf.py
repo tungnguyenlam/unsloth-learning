@@ -182,22 +182,28 @@ def main():
     print(f"\nRun Name: {run_name}")
     print(f"Max Seq Length: {max_seq_length}")
     
-    ensure_dirs()
-    
     if os.path.exists(GGUF_MODEL_DIR):
         print(f"Checking directory: {GGUF_MODEL_DIR}")
         print(f"Contents: {os.listdir(GGUF_MODEL_DIR)}")
-        gguf_files = [f for f in os.listdir(GGUF_MODEL_DIR) if f.endswith('.gguf')]
+        gguf_files = [os.path.join(GGUF_MODEL_DIR, f) for f in os.listdir(GGUF_MODEL_DIR) if f.endswith('.gguf')]
     else:
         print(f"Directory not found: {GGUF_MODEL_DIR}")
         gguf_files = []
 
+    # Fallback: Check current directory
     if not gguf_files:
-        print(f"ERROR: No GGUF files found in: {GGUF_MODEL_DIR}")
+        print("Checking current directory for GGUF files...")
+        current_dir_files = [f for f in os.listdir('.') if f.endswith('.gguf')]
+        gguf_files = current_dir_files
+        if gguf_files:
+            print(f"Found GGUF file(s) in current directory: {gguf_files}")
+
+    if not gguf_files:
+        print(f"ERROR: No GGUF files found in: {GGUF_MODEL_DIR} or current directory")
         print("Run src/training/step_04_export_gguf.py first")
         sys.exit(1)
     
-    gguf_path = os.path.join(GGUF_MODEL_DIR, gguf_files[0])
+    gguf_path = gguf_files[0]
     print(f"\nUsing GGUF model: {gguf_path}")
     
     # Load Model
