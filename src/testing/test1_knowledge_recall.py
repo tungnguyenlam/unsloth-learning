@@ -26,8 +26,11 @@ def load_test_data(path: str) -> List[Dict]:
 
 def compute_bertscore(predictions: List[str], references: List[str]) -> Dict:
     from bert_score import score as bert_score
-    P, R, F1 = bert_score(predictions, references, model_type="bert-base-multilingual-cased", verbose=False)
-    return {"f1_mean": float(np.mean(F1.numpy())), "f1_std": float(np.std(F1.numpy())), "raw_f1": F1.tolist()}
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"  Computing BERTScore on {device}...")
+    P, R, F1 = bert_score(predictions, references, model_type="bert-base-multilingual-cased", lang="ko", verbose=True, device=device, batch_size=64)
+    return {"f1_mean": float(np.mean(F1.cpu().numpy())), "f1_std": float(np.std(F1.cpu().numpy())), "raw_f1": F1.tolist()}
 
 
 def compute_headword_recall(predictions: List[str], ground_truths: List[str]) -> Dict:
