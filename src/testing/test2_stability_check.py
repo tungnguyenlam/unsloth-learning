@@ -160,7 +160,8 @@ def save_plots(output_dir: str, subject_results: Dict, overall_accuracy: float, 
 
 
 def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokenizer=None, 
-             test_data: List[Dict] = None, output_path: str = DEFAULT_OUTPUT, run_name: str = None) -> Dict:
+             test_data: List[Dict] = None, output_path: str = DEFAULT_OUTPUT, run_name: str = None,
+             batch_size: int = 32) -> Dict:
     if test_data is None:
         print("Loading KoMMLU data...")
         test_data = load_kommlu_data()
@@ -169,22 +170,44 @@ def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokeniz
     ground_truths = [d["answer"] for d in test_data]
     subjects = [d["subject"] for d in test_data]
     
-    print("\nEvaluating fine-tuned model...")
+    print(f"\nEvaluating fine-tuned model (batch_size={batch_size})...")
     ft_predictions = []
     ft_responses = []
-    for q in tqdm(questions, desc="Fine-tuned"):
-        # Gemma-3 multimodal format: content must be list of dicts with "type" key
-        messages = [{
+    
+    # Process in batches
+    for i in tqdm(range(0, len(questions), batch_size), desc="Fine-tuned (batch)"):
+        batch_questions = questions[i:i + batch_size]
+        
+        # Prepare batch messages in Gemma-3 multimodal format
+        batch_messages = [[{
             "role": "user",
             "content": [{"type": "text", "text": q}]
-        }]
-        inputs = finetuned_tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=True, return_tensors="pt", return_dict=True
+        }] for q in batch_questions]
+        
+        # Tokenize batch with padding
+        batch_inputs = finetuned_tokenizer.apply_chat_template(
+            batch_messages,
+            add_generation_prompt=True,
+            tokenize=True,
+            padding=True,
+            return_tensors="pt",
+            return_dict=True
         ).to(finetuned_model.device)
-        outputs = finetuned_model.generate(**inputs, max_new_tokens=16, do_sample=False, pad_token_id=finetuned_tokenizer.eos_token_id)
-        resp = finetuned_tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
-        ft_responses.append(resp.strip())
-        ft_predictions.append(extract_answer(resp) if extract_answer(resp) is not None else -1)
+        
+        # Generate for batch
+        outputs = finetuned_model.generate(
+            **batch_inputs,
+            max_new_tokens=16,
+            do_sample=False,
+            pad_token_id=finetuned_tokenizer.eos_token_id
+        )
+        
+        # Decode each output in batch
+        for j, output in enumerate(outputs):
+            input_len = batch_inputs['input_ids'][j].shape[0]
+            resp = finetuned_tokenizer.decode(output[input_len:], skip_special_tokens=True)
+            ft_responses.append(resp.strip())
+            ft_predictions.append(extract_answer(resp) if extract_answer(resp) is not None else -1)
     
     ft_accuracy = compute_accuracy(ft_predictions, ground_truths)
     ft_by_subject = compute_accuracy_by_subject(ft_predictions, ground_truths, subjects)
@@ -201,20 +224,42 @@ def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokeniz
     }
     
     if base_model is not None:
-        print("\nEvaluating base model...")
+        print(f"\nEvaluating base model (batch_size={batch_size})...")
         base_predictions = []
-        for q in tqdm(questions, desc="Base model"):
-            # Gemma-3 multimodal format: content must be list of dicts with "type" key
-            messages = [{
+        
+        # Process in batches
+        for i in tqdm(range(0, len(questions), batch_size), desc="Base model (batch)"):
+            batch_questions = questions[i:i + batch_size]
+            
+            # Prepare batch messages in Gemma-3 multimodal format
+            batch_messages = [[{
                 "role": "user",
                 "content": [{"type": "text", "text": q}]
-            }]
-            inputs = base_tokenizer.apply_chat_template(
-                messages, add_generation_prompt=True, tokenize=True, return_tensors="pt", return_dict=True
+            }] for q in batch_questions]
+            
+            # Tokenize batch with padding
+            batch_inputs = base_tokenizer.apply_chat_template(
+                batch_messages,
+                add_generation_prompt=True,
+                tokenize=True,
+                padding=True,
+                return_tensors="pt",
+                return_dict=True
             ).to(base_model.device)
-            outputs = base_model.generate(**inputs, max_new_tokens=16, do_sample=False, pad_token_id=base_tokenizer.eos_token_id)
-            resp = base_tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
-            base_predictions.append(extract_answer(resp) if extract_answer(resp) is not None else -1)
+            
+            # Generate for batch
+            outputs = base_model.generate(
+                **batch_inputs,
+                max_new_tokens=16,
+                do_sample=False,
+                pad_token_id=base_tokenizer.eos_token_id
+            )
+            
+            # Decode each output in batch
+            for j, output in enumerate(outputs):
+                input_len = batch_inputs['input_ids'][j].shape[0]
+                resp = base_tokenizer.decode(output[input_len:], skip_special_tokens=True)
+                base_predictions.append(extract_answer(resp) if extract_answer(resp) is not None else -1)
         
         base_accuracy = compute_accuracy(base_predictions, ground_truths)
         base_by_subject = compute_accuracy_by_subject(base_predictions, ground_truths, subjects)

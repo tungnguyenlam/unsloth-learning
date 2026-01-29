@@ -128,7 +128,7 @@ def save_plots(output_dir: str, bertscore_f1: List[float], headword_correct: Lis
 
 
 def run_test(model, tokenizer, test_data_path: str = DEFAULT_TEST_DATA, output_path: str = DEFAULT_OUTPUT, 
-             max_new_tokens: int = 256, run_name: str = None) -> Dict:
+             max_new_tokens: int = 256, run_name: str = None, batch_size: int = 16) -> Dict:
     print(f"Loading test data from: {test_data_path}")
     test_data = load_test_data(test_data_path)
     print(f"Loaded {len(test_data)} samples")
@@ -136,20 +136,42 @@ def run_test(model, tokenizer, test_data_path: str = DEFAULT_TEST_DATA, output_p
     questions = [d["question"] for d in test_data]
     ground_truths = [d["ground_truth"] for d in test_data]
     
-    print("\nGenerating predictions...")
+    print(f"\nGenerating predictions (batch_size={batch_size})...")
     predictions = []
-    for question in tqdm(questions, desc="Inference"):
-        # Gemma-3 multimodal format: content must be list of dicts with "type" key
-        messages = [{
+    
+    # Process in batches
+    for i in tqdm(range(0, len(questions), batch_size), desc="Batch Inference"):
+        batch_questions = questions[i:i + batch_size]
+        
+        # Prepare batch messages in Gemma-3 multimodal format
+        batch_messages = [[{
             "role": "user",
-            "content": [{"type": "text", "text": question}]
-        }]
-        inputs = tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=True, return_tensors="pt", return_dict=True
+            "content": [{"type": "text", "text": q}]
+        }] for q in batch_questions]
+        
+        # Tokenize batch with padding
+        batch_inputs = tokenizer.apply_chat_template(
+            batch_messages, 
+            add_generation_prompt=True, 
+            tokenize=True, 
+            padding=True,
+            return_tensors="pt", 
+            return_dict=True
         ).to(model.device)
-        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, pad_token_id=tokenizer.eos_token_id)
-        pred = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
-        predictions.append(pred.strip())
+        
+        # Generate for batch
+        outputs = model.generate(
+            **batch_inputs, 
+            max_new_tokens=max_new_tokens, 
+            do_sample=False, 
+            pad_token_id=tokenizer.eos_token_id
+        )
+        
+        # Decode each output in batch
+        for j, output in enumerate(outputs):
+            input_len = batch_inputs['input_ids'][j].shape[0]
+            pred = tokenizer.decode(output[input_len:], skip_special_tokens=True)
+            predictions.append(pred.strip())
     
     print("\nComputing metrics...")
     bertscore = compute_bertscore(predictions, ground_truths)
