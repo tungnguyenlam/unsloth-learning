@@ -175,9 +175,18 @@ def main():
         )
         print(f"  Wandb run: {run_name}")
     
+    # Calculate eval_steps to evaluate exactly 10 times per epoch
+    eval_steps_value = None
+    if eval_dataset is not None:
+        steps_per_epoch = len(train_dataset) // (args.batch_size * args.grad_accum)
+        eval_steps_value = max(1, steps_per_epoch // 10)  # Ensure at least 1
+        print(f"  Steps per epoch: {steps_per_epoch}")
+        print(f"  Eval steps (10x per epoch): {eval_steps_value}")
+    
     trainer_args = SFTConfig(
         dataset_text_field="text",
         per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.batch_size * args.grad_accum,  # Larger batch for eval (no gradients)
         gradient_accumulation_steps=args.grad_accum,
         warmup_steps=WARMUP_STEPS,
         learning_rate=args.learning_rate,
@@ -192,7 +201,7 @@ def main():
         save_steps=500,
         save_total_limit=2,
         eval_strategy="steps" if eval_dataset is not None else "no",
-        eval_steps=100 if eval_dataset is not None else None,
+        eval_steps=eval_steps_value,
         load_best_model_at_end=True if eval_dataset is not None else False,
         metric_for_best_model="eval_loss" if eval_dataset is not None else None,
         greater_is_better=False,
