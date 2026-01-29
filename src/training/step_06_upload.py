@@ -3,11 +3,16 @@ Step 06: Upload to HuggingFace
 - Upload merged 16-bit model
 - Upload GGUF model
 
-Run: python step_06_upload.py --hf-token YOUR_TOKEN --hf-username YOUR_USERNAME
+Run from project root: python src/training/step_06_upload.py --hf-token YOUR_TOKEN --hf-username YOUR_USERNAME
 """
 
 import os
 import sys
+
+# Allow running from project root
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
 
 from step_00_config import (
     MODEL_NAME, LOAD_IN_4BIT,
@@ -47,14 +52,14 @@ def main():
     
     if not os.path.exists(LORA_MODEL_DIR):
         print(f"ERROR: LoRA model not found at: {LORA_MODEL_DIR}")
-        print("Run step_02_train.py first")
+        print("Run src/training/step_02_train.py first")
         sys.exit(1)
     
     # Load Model
     print("\n[1/3] Loading trained model...")
-    from unsloth import FastLanguageModel
+    from unsloth import FastModel
     
-    model, tokenizer = FastLanguageModel.from_pretrained(
+    model, tokenizer = FastModel.from_pretrained(
         model_name=LORA_MODEL_DIR,
         max_seq_length=max_seq_length,
         load_in_4bit=LOAD_IN_4BIT,

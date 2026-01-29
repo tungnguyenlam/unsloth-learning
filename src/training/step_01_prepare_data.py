@@ -4,11 +4,17 @@ Step 01: Prepare Data
 - Auto-detect max sequence length
 - Create test datasets for evaluation
 
-Run: python step_01_prepare_data.py
+Run from project root: python src/training/step_01_prepare_data.py
 """
 
 import os
 import sys
+
+# Allow running from project root
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
 import json
 import random
 
@@ -150,7 +156,7 @@ def main():
     print("STEP 01 COMPLETE")
     print("=" * 60)
     print(f"\nDetected max_seq_length: {max_seq_length}")
-    print("\nNext: python step_02_train.py")
+    print("\nNext: python src/training/step_02_train.py")
 
 
 if __name__ == "__main__":

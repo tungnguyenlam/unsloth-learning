@@ -1,15 +1,21 @@
 """
 Step 02: Train Model
-- Load base model with QLoRA
+- Load base model
 - Apply LoRA adapters with QAT
 - Train on military vocabulary data
 - Save LoRA adapters
 
-Run: python step_02_train.py
+Run from project root: python src/training/step_02_train.py
 """
 
 import os
 import sys
+
+# Allow running from project root
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
 import json
 import torch
 import wandb
@@ -90,11 +96,11 @@ def main():
     print(f"  QAT:            {use_qat}")
     print(f"  Wandb:          {use_wandb}")
     
-    # Step 1: Load Model
+    # Step 1: Load Model (use FastModel like in working notebook)
     print("\n[1/6] Loading model and tokenizer...")
-    from unsloth import FastLanguageModel
+    from unsloth import FastModel, FastLanguageModel
     
-    model, tokenizer = FastLanguageModel.from_pretrained(
+    model, tokenizer = FastModel.from_pretrained(
         model_name=MODEL_NAME,
         max_seq_length=max_seq_length,
         load_in_4bit=LOAD_IN_4BIT,
@@ -263,7 +269,7 @@ def main():
     print("=" * 60)
     print(f"\nRun name: {run_name}")
     print(f"Saved: {LORA_MODEL_DIR}/")
-    print("\nNext: python step_03_test_fp16.py")
+    print("\nNext: python src/training/step_03_test_fp16.py")
 
 
 if __name__ == "__main__":

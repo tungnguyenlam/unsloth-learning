@@ -4,13 +4,21 @@ Step 03: Test FP16 Model
 - Run Test 1: Knowledge Recall
 - Run Test 2: Stability Check (KoMMLU)
 
-Run: python step_03_test_fp16.py
+Run from project root: python src/training/step_03_test_fp16.py
 """
 
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'testing'))
+# Allow running from project root
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+# Add testing directory to path
+TESTING_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), 'testing')
+if TESTING_DIR not in sys.path:
+    sys.path.insert(0, TESTING_DIR)
 
 from step_00_config import (
     MODEL_NAME, LOAD_IN_4BIT,
@@ -38,14 +46,14 @@ def main():
     
     if not os.path.exists(LORA_MODEL_DIR):
         print(f"ERROR: LoRA model not found at: {LORA_MODEL_DIR}")
-        print("Run step_02_train.py first")
+        print("Run src/training/step_02_train.py first")
         sys.exit(1)
     
     # Load Model
     print("\n[1/3] Loading trained model...")
-    from unsloth import FastLanguageModel
+    from unsloth import FastModel, FastLanguageModel
     
-    model, tokenizer = FastLanguageModel.from_pretrained(
+    model, tokenizer = FastModel.from_pretrained(
         model_name=LORA_MODEL_DIR,
         max_seq_length=max_seq_length,
         load_in_4bit=LOAD_IN_4BIT,
@@ -59,7 +67,7 @@ def main():
         
         if not os.path.exists(TEST1_DATA_PATH):
             print(f"  WARNING: Test data not found: {TEST1_DATA_PATH}")
-            print("  Run step_01_prepare_data.py first")
+            print("  Run src/training/step_01_prepare_data.py first")
         else:
             import test1_knowledge_recall as test1
             test1_output = os.path.join(RESULTS_DIR, f"fp16_test1_{run_name}.json")
@@ -80,7 +88,7 @@ def main():
     print("STEP 03 COMPLETE")
     print("=" * 60)
     print(f"\nResults saved to: {RESULTS_DIR}/")
-    print("\nNext: python step_04_export_gguf.py")
+    print("\nNext: python src/training/step_04_export_gguf.py")
 
 
 if __name__ == "__main__":

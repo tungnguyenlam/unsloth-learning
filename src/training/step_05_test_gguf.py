@@ -5,14 +5,22 @@ Step 05: Test GGUF Model & Compare
 - Run Test 2: Stability Check (KoMMLU)
 - Run Test 3: Compare FP16 vs GGUF
 
-Run: python step_05_test_gguf.py
+Run from project root: python src/training/step_05_test_gguf.py
 """
 
 import os
 import sys
 import json
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'testing'))
+# Allow running from project root
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+# Add testing directory to path
+TESTING_DIR = os.path.join(os.path.dirname(SCRIPT_DIR), 'testing')
+if TESTING_DIR not in sys.path:
+    sys.path.insert(0, TESTING_DIR)
 
 from step_00_config import (
     GGUF_MODEL_DIR, TEST1_DATA_PATH, RESULTS_DIR,
@@ -30,9 +38,6 @@ class GGUFModelWrapper:
             verbose=False,
         )
         self.device = "cuda"
-    
-    def generate(self, input_ids=None, max_new_tokens=256, **kwargs):
-        raise NotImplementedError("Use generate_text instead")
     
     def generate_text(self, prompt: str, max_new_tokens: int = 256) -> str:
         output = self.llm(
@@ -64,16 +69,12 @@ class GGUFTokenizerWrapper:
         if tokenize:
             return {"input_ids": None, "prompt": text}
         return text
-    
-    def decode(self, tokens, skip_special_tokens=True):
-        return ""
 
 
-def run_test1_gguf(model: GGUFModelWrapper, tokenizer: GGUFTokenizerWrapper, 
-                   test_data_path: str, output_path: str, run_name: str = None) -> dict:
+def run_test1_gguf(model, tokenizer, test_data_path: str, output_path: str, run_name: str = None) -> dict:
     from tqdm import tqdm
-    import numpy as np
     from datetime import datetime
+    import test1_knowledge_recall as test1
     
     print(f"Loading test data from: {test_data_path}")
     data = []
@@ -96,15 +97,12 @@ def run_test1_gguf(model: GGUFModelWrapper, tokenizer: GGUFTokenizerWrapper,
         predictions.append(pred)
     
     print("Computing metrics...")
-    import test1_knowledge_recall as test1
     bertscore = test1.compute_bertscore(predictions, ground_truths)
     headword = test1.compute_headword_recall(predictions, ground_truths)
-    abbreviation = test1.compute_abbreviation_match(predictions, ground_truths)
     
     results = {
-        "bertscore": {k: v for k, v in bertscore.items() if k != "raw_f1"},
-        "headword_recall": {k: v for k, v in headword.items() if k not in ["raw", "headwords"]},
-        "abbreviation_match": {k: v for k, v in abbreviation.items() if k not in ["raw", "abbreviations"]},
+        "bertscore": {"f1_mean": bertscore["f1_mean"], "f1_std": bertscore["f1_std"]},
+        "headword_recall": {"accuracy": headword["accuracy"], "correct": headword["correct"], "total": headword["total"]},
         "passed": {
             "bertscore": bertscore["f1_mean"] >= 0.70,
             "headword": headword["accuracy"] >= 0.80
@@ -122,19 +120,10 @@ def run_test1_gguf(model: GGUFModelWrapper, tokenizer: GGUFTokenizerWrapper,
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     
-    # Save detailed results
-    output_dir = os.path.dirname(output_path)
-    test1.save_detailed_results(
-        output_dir, questions, predictions, ground_truths,
-        bertscore["raw_f1"], headword["raw"], headword["headwords"], run_name
-    )
-    test1.save_plots(output_dir, bertscore["raw_f1"], headword["raw"], run_name)
-    
     return results
 
 
-def run_test2_gguf(model: GGUFModelWrapper, tokenizer: GGUFTokenizerWrapper,
-                   output_path: str, run_name: str = None) -> dict:
+def run_test2_gguf(model, tokenizer, output_path: str, run_name: str = None) -> dict:
     from tqdm import tqdm
     from datetime import datetime
     import test2_stability_check as test2
@@ -144,11 +133,9 @@ def run_test2_gguf(model: GGUFModelWrapper, tokenizer: GGUFTokenizerWrapper,
     
     questions = [test2.format_mcq_prompt(d["question"], d["choices"]) for d in test_data]
     ground_truths = [d["answer"] for d in test_data]
-    subjects = [d["subject"] for d in test_data]
     
     print(f"Running inference on {len(questions)} samples...")
     predictions = []
-    responses = []
     
     for q in tqdm(questions, desc="GGUF KoMMLU"):
         prompt = tokenizer.apply_chat_template(
@@ -157,20 +144,12 @@ def run_test2_gguf(model: GGUFModelWrapper, tokenizer: GGUFTokenizerWrapper,
             tokenize=False,
         )
         resp = model.generate_text(prompt, max_new_tokens=16)
-        responses.append(resp.strip())
         answer = test2.extract_answer(resp) if test2.extract_answer(resp) is not None else -1
         predictions.append(answer)
     
     accuracy = test2.compute_accuracy(predictions, ground_truths)
-    by_subject = test2.compute_accuracy_by_subject(predictions, ground_truths, subjects)
-    
     results = {
-        "finetuned": {
-            "accuracy": accuracy["accuracy"], 
-            "correct": accuracy["correct"], 
-            "total": accuracy["total"],
-            "by_subject": by_subject
-        },
+        "finetuned": {"accuracy": accuracy["accuracy"], "correct": accuracy["correct"], "total": accuracy["total"]},
         "passed": {"min_accuracy_met": accuracy["accuracy"] >= 0.30},
         "overall_passed": accuracy["accuracy"] >= 0.30,
         "run_name": run_name,
@@ -182,11 +161,6 @@ def run_test2_gguf(model: GGUFModelWrapper, tokenizer: GGUFTokenizerWrapper,
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
-    
-    # Save detailed results and plots
-    output_dir = os.path.dirname(output_path)
-    test2.save_detailed_results(output_dir, test_data, predictions, responses, run_name)
-    test2.save_plots(output_dir, by_subject, accuracy["accuracy"], run_name)
     
     return results
 
@@ -212,7 +186,7 @@ def main():
     gguf_files = [f for f in os.listdir(GGUF_MODEL_DIR) if f.endswith('.gguf')] if os.path.exists(GGUF_MODEL_DIR) else []
     if not gguf_files:
         print(f"ERROR: No GGUF files found in: {GGUF_MODEL_DIR}")
-        print("Run step_04_export_gguf.py first")
+        print("Run src/training/step_04_export_gguf.py first")
         sys.exit(1)
     
     gguf_path = os.path.join(GGUF_MODEL_DIR, gguf_files[0])
@@ -254,7 +228,7 @@ def main():
         fp16_test2_path = os.path.join(RESULTS_DIR, f"fp16_test2_{run_name}.json")
         
         if not os.path.exists(fp16_test1_path) or not os.path.exists(fp16_test2_path):
-            print("  WARNING: FP16 results not found. Run step_03_test_fp16.py first")
+            print("  WARNING: FP16 results not found. Run src/training/step_03_test_fp16.py first")
         elif gguf_test1_results is None or gguf_test2_results is None:
             print("  WARNING: GGUF results not available. Cannot compare.")
         else:
@@ -274,7 +248,7 @@ def main():
     print("STEP 05 COMPLETE")
     print("=" * 60)
     print(f"\nResults saved to: {RESULTS_DIR}/")
-    print("\nNext: python step_06_upload.py (optional)")
+    print("\nNext: python src/training/step_06_upload.py (optional)")
 
 
 if __name__ == "__main__":
