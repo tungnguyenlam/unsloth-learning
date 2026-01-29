@@ -177,11 +177,14 @@ def main():
     
     # Calculate eval_steps to evaluate exactly 10 times per epoch
     eval_steps_value = None
+    save_steps_value = 500
     if eval_dataset is not None:
         steps_per_epoch = len(train_dataset) // (args.batch_size * args.grad_accum)
         eval_steps_value = max(1, steps_per_epoch // 10)  # Ensure at least 1
+        save_steps_value = eval_steps_value * 10  # Save once per epoch (must be multiple of eval_steps)
         print(f"  Steps per epoch: {steps_per_epoch}")
         print(f"  Eval steps (10x per epoch): {eval_steps_value}")
+        print(f"  Save steps: {save_steps_value}")
     
     trainer_args = SFTConfig(
         dataset_text_field="text",
@@ -198,7 +201,7 @@ def main():
         seed=3407,
         output_dir=OUTPUT_DIR,
         report_to="wandb" if use_wandb else "none",
-        save_steps=500,
+        save_steps=save_steps_value,
         save_total_limit=2,
         eval_strategy="steps" if eval_dataset is not None else "no",
         eval_steps=eval_steps_value,
