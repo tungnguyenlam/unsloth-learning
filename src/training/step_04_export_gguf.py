@@ -60,13 +60,53 @@ def main():
     print(f"\n[2/2] Exporting to GGUF ({args.quantization})...")
     os.makedirs(GGUF_MODEL_DIR, exist_ok=True)
     
+    # Note: save_pretrained_gguf might save to current dir despite argument
     model.save_pretrained_gguf(
         GGUF_MODEL_DIR,
         tokenizer,
         quantization_method=args.quantization,
     )
     
-    print(f"  Saved to: {GGUF_MODEL_DIR}/")
+    # Organizing files: Move GGUF from current dir to GGUF_MODEL_DIR if needed
+    import shutil
+    
+    # Look for GGUF files in current directory
+    current_dir_ggufs = [f for f in os.listdir('.') if f.endswith('.gguf')]
+    
+    for f in current_dir_ggufs:
+        # Construct new name with run_name to avoid collisions
+        # e.g. gemma-3-4b-it.Q4_K_M.gguf -> gemma-3-4b-it-run_name.Q4_K_M.gguf
+        if run_name not in f:
+            name_parts = f.rsplit('.', 2) # split extension
+            if len(name_parts) > 1:
+                new_name = f"{name_parts[0]}-{run_name}.{'.'.join(name_parts[1:])}"
+            else:
+                new_name = f"{f}-{run_name}"
+        else:
+            new_name = f
+            
+        src = os.path.join('.', f)
+        dst = os.path.join(GGUF_MODEL_DIR, new_name)
+        
+        print(f"  Moving/Renaming: {src} -> {dst}")
+        shutil.move(src, dst)
+
+    # Also check if files are inside GGUF_MODEL_DIR but need renaming
+    subdir_ggufs = [f for f in os.listdir(GGUF_MODEL_DIR) if f.endswith('.gguf') and run_name not in f]
+    for f in subdir_ggufs:
+         src = os.path.join(GGUF_MODEL_DIR, f)
+         
+         name_parts = f.rsplit('.', 2)
+         if len(name_parts) > 1:
+            new_name = f"{name_parts[0]}-{run_name}.{'.'.join(name_parts[1:])}"
+         else:
+            new_name = f"{f}-{run_name}"
+            
+         dst = os.path.join(GGUF_MODEL_DIR, new_name)
+         print(f"  Renaming: {src} -> {dst}")
+         shutil.move(src, dst)
+         
+    print(f"  Saved and organized in: {GGUF_MODEL_DIR}/")
     
     # Print Ollama instructions
     print("\n" + "-" * 40)
