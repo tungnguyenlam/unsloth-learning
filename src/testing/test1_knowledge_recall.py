@@ -136,21 +136,19 @@ def run_test(model, tokenizer, test_data_path: str = DEFAULT_TEST_DATA, output_p
     questions = [d["question"] for d in test_data]
     ground_truths = [d["ground_truth"] for d in test_data]
     
-    # Wrap tokenizer with Gemma-3 chat template for text-only inference
-    from unsloth.chat_templates import get_chat_template
-    inference_tokenizer = get_chat_template(tokenizer, chat_template="gemma-3")
-    
     print("\nGenerating predictions...")
     predictions = []
     for question in tqdm(questions, desc="Inference"):
-        messages = [{"role": "user", "content": question}]
-        # Apply chat template to get text, then tokenize separately
-        prompt = inference_tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=False
-        )
-        inputs = inference_tokenizer(prompt, return_tensors="pt").to(model.device)
-        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, pad_token_id=inference_tokenizer.eos_token_id)
-        pred = inference_tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+        # Gemma-3 multimodal format: content must be list of dicts with "type" key
+        messages = [{
+            "role": "user",
+            "content": [{"type": "text", "text": question}]
+        }]
+        inputs = tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=True, return_tensors="pt", return_dict=True
+        ).to(model.device)
+        outputs = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, pad_token_id=tokenizer.eos_token_id)
+        pred = tokenizer.decode(outputs[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
         predictions.append(pred.strip())
     
     print("\nComputing metrics...")
