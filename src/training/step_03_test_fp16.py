@@ -108,12 +108,31 @@ def main():
     from transformers import AutoTokenizer, AutoModelForCausalLM
     
     tokenizer = AutoTokenizer.from_pretrained(hf_model_name, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        hf_model_name,
-        torch_dtype=torch.float16,
-        device_map="auto",
-        trust_remote_code=True
-    )
+    try:
+        print("  Attempting to load in bfloat16...")
+        model = AutoModelForCausalLM.from_pretrained(
+            hf_model_name,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+            trust_remote_code=True
+        )
+    except Exception as e:
+        print(f"  Warning: Failed to load in bfloat16 ({e}). Fallback to float16...")
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                hf_model_name,
+                torch_dtype=torch.float16,
+                device_map="auto",
+                trust_remote_code=True
+            )
+        except Exception as e2:
+             print(f"  Warning: Failed to load in float16 ({e2}). Fallback to float32...")
+             model = AutoModelForCausalLM.from_pretrained(
+                hf_model_name,
+                torch_dtype=torch.float32,
+                device_map="auto",
+                trust_remote_code=True
+            )
     
     # Set up tokenizer for batch processing
     if tokenizer.pad_token is None:

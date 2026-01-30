@@ -241,13 +241,25 @@ def main():
     parser.add_argument("--skip-test2", action="store_true")
     parser.add_argument("--skip-test3", action="store_true")
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size (ignored for GGUF inference)")
+    parser.add_argument("--hf-model", type=str, default=None, 
+                       help="HuggingFace GGUF model repo (e.g. username/repo-GGUF). Will download automatically.")
+    parser.add_argument("--hf-file", type=str, default=None, 
+                       help="Specific GGUF filename in HF repo. If not set, picks first .gguf found.")
     parser.add_argument("--model", type=str, default=None, help="Explicitly specify GGUF model file path")
     parser.add_argument("--quick", action="store_true", help="Quick test with only 50 samples per test (default for GGUF)")
     parser.add_argument("--max-samples", type=int, default=50, help="Max samples per test (default: 50)")
+    
     args = parser.parse_args()
     
     max_seq_length = get_max_seq_length()
     run_name = get_saved_run_name()
+    
+    # If using HF model, sync run_name with step_03 naming to find FP16 results
+    if args.hf_model:
+        # mainguyenngoc/model-name-GGUF -> model-name
+        hf_short = args.hf_model.split("/")[-1].replace("-GGUF", "")
+        # Step 03 saved as hf_{model_name}
+        run_name = f"hf_{hf_short}"
     
     # For GGUF, default to 50 samples unless overridden
     max_samples = args.max_samples
@@ -259,14 +271,47 @@ def main():
     print(f"Max Seq Length: {max_seq_length}")
     print(f"Max Samples: {max_samples} (GGUF quick mode)")
     
-    # 1. Use explicit model if provided
-    if args.model:
+    # Logic for model selection
+    gguf_path = None
+    
+    # Case 1: HuggingFace Download
+    if args.hf_model:
+        print(f"\n[Model Selection] Downloading from HuggingFace: {args.hf_model}")
+        from huggingface_hub import hf_hub_download, list_repo_files
+        
+        repo_id = args.hf_model
+        
+        # If specific file requested
+        if args.hf_file:
+            target_file = args.hf_file
+            print(f"  Target file: {target_file}")
+        else:
+            # List files to find a GGUF
+            print("  Finding GGUF file in repo...")
+            files = list_repo_files(repo_id)
+            ggufs = [f for f in files if f.endswith(".gguf") and "mmproj" not in f]
+            
+            if not ggufs:
+                print(f"ERROR: No GGUF files found in {repo_id}")
+                sys.exit(1)
+            
+            # Simple heuristic: pick valid Q4_K_M if exists, else first one
+            target_file = next((f for f in ggufs if "q4_k_m" in f.lower()), ggufs[0])
+            print(f"  Auto-selected file: {target_file}")
+            
+        # Download
+        gguf_path = hf_hub_download(repo_id=repo_id, filename=target_file)
+        print(f"  Downloaded to: {gguf_path}")
+
+    # Case 2: Explicit Local Path
+    elif args.model:
         if not os.path.exists(args.model):
             print(f"ERROR: Specified model file not found: {args.model}")
             sys.exit(1)
         gguf_path = args.model
         print(f"\nUsing specified GGUF model: {gguf_path}")
         
+    # Case 3: Auto-discovery
     else:
         # 2. Search for models
         if os.path.exists(GGUF_MODEL_DIR):

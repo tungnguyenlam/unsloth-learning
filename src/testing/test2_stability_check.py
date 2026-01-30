@@ -60,7 +60,7 @@ from datetime import datetime
 DEFAULT_OUTPUT = "results/test2_results.json"
 MAX_PERFORMANCE_DROP = 0.10
 MIN_ACCURACY = 0.30
-KOMMLU_SUBJECTS = ["korean_history", "korean_geography", "general_knowledge", "civil_law", "criminal_law"]
+KOMMLU_SUBJECTS = ["Korean-History", "Criminal-Law", "Law", "Economics", "Psychology"]
 SAMPLES_PER_SUBJECT = 20
 
 
@@ -81,10 +81,16 @@ def load_kommlu_data(subjects: List[str] = None, samples_per_subject: int = 20) 
                 samples = [dataset[i] for i in range(len(dataset))]
             
             for item in samples:
+                answer = item["answer"]
+                if isinstance(answer, str):
+                    numeric_answer = ord(answer) - ord("A")
+                else:
+                    numeric_answer = int(answer)
+                    
                 all_data.append({
                     "question": item["question"],
                     "choices": [item["A"], item["B"], item["C"], item["D"]],
-                    "answer": ord(item["answer"]) - ord("A"),
+                    "answer": numeric_answer,
                     "subject": subject
                 })
         except Exception as e:
@@ -95,7 +101,10 @@ def load_kommlu_data(subjects: List[str] = None, samples_per_subject: int = 20) 
 
 
 def format_mcq_prompt(question: str, choices: List[str]) -> str:
-    prompt = f"질문: {question}\n\n"
+    # One-shot example
+    example = "질문: 대한민국의 수도는?\nA. 부산\nB. 서울\nC. 대구\nD. 인천\n\n정답을 A, B, C, D 중 하나로 답하세요. 정답: B\n\n"
+    
+    prompt = example + f"질문: {question}\n"
     for i, choice in enumerate(choices):
         prompt += f"{['A', 'B', 'C', 'D'][i]}. {choice}\n"
     prompt += "\n정답을 A, B, C, D 중 하나로 답하세요. 정답:"
@@ -142,9 +151,9 @@ def save_detailed_results(output_dir: str, test_data: List[Dict], predictions: L
             "question": data["question"],
             "choices": data["choices"],
             "ground_truth_idx": data["answer"],
-            "ground_truth": ["A", "B", "C", "D"][data["answer"]],
+            "ground_truth": ["A", "B", "C", "D"][data["answer"]] if 0 <= data["answer"] < 4 else str(data["answer"]),
             "prediction_idx": pred,
-            "prediction": ["A", "B", "C", "D"][pred] if pred >= 0 else "INVALID",
+            "prediction": ["A", "B", "C", "D"][pred] if 0 <= pred < 4 else "INVALID",
             "response": resp,
             "correct": pred == data["answer"],
             "subject": data["subject"]

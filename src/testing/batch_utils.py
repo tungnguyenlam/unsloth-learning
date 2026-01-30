@@ -78,7 +78,8 @@ def batch_generate(
             batch_prompts,
             padding=True,
             return_tensors="pt",
-            return_attention_mask=True
+            return_attention_mask=True,
+            add_special_tokens=False
         ).to(model.device)
         
         padded_length = inputs["input_ids"].shape[1]
