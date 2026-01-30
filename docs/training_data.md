@@ -192,10 +192,17 @@ The diversity of question types enables better generalization:
 
 ## Training Script Integration
 
-The training script (`src/training/step_02_train.py`) loads the generated JSONL and:
-1. Optionally splits into train/validation sets (`--eval-split` argument)
-2. The split is done AFTER shuffling, so the same vocabulary term may appear in both sets with different question types
-3. This validates that the model learned the content (can answer different question types about the same term)
+The training workflow involves two types of data splitting:
+
+1. **Hold-out Test Set (created by `step_01_prepare_data.py`)**:
+   - A dedicated subset (~5%) is saved to `data/training_data/test_data/test1_knowledge_recall.jsonl`.
+   - This prevents the model from training on these specific examples.
+   - Used exclusively for the final "Test 1: Knowledge Recall" evaluation.
+
+2. **Validation Split (done by `step_02_train.py`)**:
+   - The remaining training data is optionally split again (default 5%) during training using `--eval-split`.
+   - This is used to calculate validation loss during training to monitor overfitting.
+   - It is separate from the hold-out test set.
 
 ## Regenerating Training Data
 

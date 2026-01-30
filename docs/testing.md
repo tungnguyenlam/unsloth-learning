@@ -93,14 +93,19 @@ D. [Choice D]
 
 ### step_03_test_fp16.py
 
-Tests the FP16 LoRA model before quantization.
+Tests the FP16 LoRA model before quantization. Checks for adapter vs merged model automatically.
 
 ```bash
-# Test local LoRA model
+# Test local LoRA model (default)
 python src/training/step_03_test_fp16.py
 
-# Test a HuggingFace model directly
-python src/training/step_03_test_fp16.py --hf-model google/gemma-3-4b-it
+# Test a specific HuggingFace model
+python src/training/step_03_test_fp16.py --hf-model mainguyenngoc/gemma-3-4b-military
+
+# Test a specific commit/revision (Useful for testing intermediate checkpoints)
+python src/training/step_03_test_fp16.py \
+    --hf-model mainguyenngoc/gemma-3-4b-military \
+    --revision b83bfa93
 
 # Skip specific tests
 python src/training/step_03_test_fp16.py --skip-test1
@@ -108,6 +113,11 @@ python src/training/step_03_test_fp16.py --skip-test1
 # Adjust batch size
 python src/training/step_03_test_fp16.py --batch-size 8
 ```
+
+**Auto-Detection:**
+- The script automatically detects if the checkpoint is **Adapter-only (PEFT)** or **Full Merged Model**.
+- **Adapter Mode**: Automatically fetches the matching base model from `adapter_config.json` and loads it (requires less VRAM than training).
+- **Merged Mode**: Loads directly as a standard CausalLM.
 
 ### step_05_test_gguf.py
 
