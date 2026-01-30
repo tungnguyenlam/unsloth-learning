@@ -72,10 +72,13 @@ def main():
     parser.add_argument("--eval-split", type=float, default=EVAL_SPLIT)
     parser.add_argument("--no-grad-ckpt", action="store_true", help="Disable gradient checkpointing for faster training (uses more VRAM)")
     parser.add_argument("--model-name", type=str, default=None, help="Override base model name (e.g., unsloth/gemma-3-270m-it)")
+    parser.add_argument("--load-in-4bit", type=lambda x: x.lower() == 'true', default=True, 
+                       help="Load model in 4-bit quantization (default: True)")
     args = parser.parse_args()
     
     # Determine base model: CLI override > Config default
     model_name = args.model_name or MODEL_NAME
+    load_in_4bit = args.load_in_4bit
     
     # Determine QAT usage: CLI override > Config default
     if args.qat:
@@ -108,6 +111,7 @@ def main():
     print(f"  Learning Rate:  {args.learning_rate}")
     print(f"  Batch Size:     {args.batch_size} x {args.grad_accum} = {args.batch_size * args.grad_accum}")
     print(f"  QAT:            {use_qat}")
+    print(f"  Load 4-bit:     {load_in_4bit}")
     print(f"  Grad Ckpt:      {use_grad_ckpt}")
     print(f"  Wandb:          {use_wandb}")
     
@@ -118,7 +122,7 @@ def main():
     model, tokenizer = FastModel.from_pretrained(
         model_name=model_name,
         max_seq_length=max_seq_length,
-        load_in_4bit=LOAD_IN_4BIT,
+        load_in_4bit=load_in_4bit,
         load_in_8bit=False,
         full_finetuning=False,
     )
