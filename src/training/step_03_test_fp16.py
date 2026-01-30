@@ -59,7 +59,14 @@ def main():
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size for inference (default: 16)")
     parser.add_argument("--hf-model", type=str, default=None, 
                        help="HuggingFace model name to test (default: reads from config)")
+    parser.add_argument("--quick", action="store_true", help="Quick test with only 50 samples per test")
+    parser.add_argument("--max-samples", type=int, default=None, help="Max samples per test (default: all)")
     args = parser.parse_args()
+    
+    # Determine max_samples
+    max_samples = args.max_samples
+    if args.quick and max_samples is None:
+        max_samples = 50
     
     run_name = get_saved_run_name()
     
@@ -68,6 +75,8 @@ def main():
     print("=" * 60)
     print(f"\nRun Name: {run_name}")
     print(f"Batch Size: {args.batch_size}")
+    if max_samples:
+        print(f"Max Samples: {max_samples} (quick mode)")
     
     ensure_dirs()
     
@@ -124,7 +133,7 @@ def main():
         else:
             import test1_knowledge_recall as test1
             test1_output = os.path.join(results_dir, f"fp16_test1_{run_name}.json")
-            test1.run_test(model, tokenizer, TEST1_DATA_PATH, test1_output, run_name=f"fp16_{run_name}", batch_size=args.batch_size)
+            test1.run_test(model, tokenizer, TEST1_DATA_PATH, test1_output, run_name=f"fp16_{run_name}", batch_size=args.batch_size, max_samples=max_samples)
     else:
         print("\n[2/3] Skipping Test 1")
     
@@ -133,7 +142,7 @@ def main():
         print("\n[3/3] Running Test 2: Stability Check (KoMMLU)...")
         import test2_stability_check as test2
         test2_output = os.path.join(results_dir, f"fp16_test2_{run_name}.json")
-        test2.run_test(model, tokenizer, output_path=test2_output, run_name=f"fp16_{run_name}", batch_size=args.batch_size)
+        test2.run_test(model, tokenizer, output_path=test2_output, run_name=f"fp16_{run_name}", batch_size=args.batch_size, max_samples=max_samples)
     else:
         print("\n[3/3] Skipping Test 2")
     

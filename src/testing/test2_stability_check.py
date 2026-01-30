@@ -208,10 +208,17 @@ def save_plots(output_dir: str, subject_results: Dict, overall_accuracy: float, 
 
 def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokenizer=None, 
              test_data: List[Dict] = None, output_path: str = DEFAULT_OUTPUT, run_name: str = None,
-             batch_size: int = 32) -> Dict:
+             batch_size: int = 32, max_samples: int = None) -> Dict:
     if test_data is None:
         print("Loading KoMMLU data...")
         test_data = load_kommlu_data()
+    
+    # Limit samples if max_samples is set
+    if max_samples and max_samples < len(test_data):
+        import random
+        random.seed(42)  # Reproducible sampling
+        test_data = random.sample(test_data, max_samples)
+        print(f"Using {max_samples} samples (quick mode)")
     
     questions = [format_mcq_prompt(d["question"], d["choices"]) for d in test_data]
     ground_truths = [d["answer"] for d in test_data]

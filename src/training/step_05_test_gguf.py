@@ -106,7 +106,7 @@ class GGUFTokenizerWrapper:
         return text
 
 
-def run_test1_gguf(model, tokenizer, test_data_path: str, output_path: str, run_name: str = None) -> dict:
+def run_test1_gguf(model, tokenizer, test_data_path: str, output_path: str, run_name: str = None, max_samples: int = 50) -> dict:
     from tqdm import tqdm
     from datetime import datetime
     import test1_knowledge_recall as test1
@@ -116,6 +116,13 @@ def run_test1_gguf(model, tokenizer, test_data_path: str, output_path: str, run_
     with open(test_data_path, 'r', encoding='utf-8') as f:
         for line in f:
             data.append(json.loads(line.strip()))
+    
+    # Limit samples for quick GGUF testing
+    if max_samples and max_samples < len(data):
+        import random
+        random.seed(42)
+        data = random.sample(data, max_samples)
+        print(f"Using {max_samples} samples (quick mode)")
     
     print(f"Running inference on {len(data)} samples...")
     predictions = []
@@ -158,13 +165,20 @@ def run_test1_gguf(model, tokenizer, test_data_path: str, output_path: str, run_
     return results
 
 
-def run_test2_gguf(model, tokenizer, output_path: str, run_name: str = None) -> dict:
+def run_test2_gguf(model, tokenizer, output_path: str, run_name: str = None, max_samples: int = 50) -> dict:
     from tqdm import tqdm
     from datetime import datetime
     import test2_stability_check as test2
     
     print("Loading KoMMLU data...")
     test_data = test2.load_kommlu_data()
+    
+    # Limit samples for quick GGUF testing
+    if max_samples and max_samples < len(test_data):
+        import random
+        random.seed(42)
+        test_data = random.sample(test_data, max_samples)
+        print(f"Using {max_samples} samples (quick mode)")
     
     questions = [test2.format_mcq_prompt(d["question"], d["choices"]) for d in test_data]
     ground_truths = [d["answer"] for d in test_data]
@@ -228,16 +242,22 @@ def main():
     parser.add_argument("--skip-test3", action="store_true")
     parser.add_argument("--batch-size", type=int, default=1, help="Batch size (ignored for GGUF inference)")
     parser.add_argument("--model", type=str, default=None, help="Explicitly specify GGUF model file path")
+    parser.add_argument("--quick", action="store_true", help="Quick test with only 50 samples per test (default for GGUF)")
+    parser.add_argument("--max-samples", type=int, default=50, help="Max samples per test (default: 50)")
     args = parser.parse_args()
     
     max_seq_length = get_max_seq_length()
     run_name = get_saved_run_name()
+    
+    # For GGUF, default to 50 samples unless overridden
+    max_samples = args.max_samples
     
     print("=" * 60)
     print("STEP 05: TEST GGUF MODEL")
     print("=" * 60)
     print(f"\nRun Name: {run_name}")
     print(f"Max Seq Length: {max_seq_length}")
+    print(f"Max Samples: {max_samples} (GGUF quick mode)")
     
     # 1. Use explicit model if provided
     if args.model:
@@ -321,7 +341,7 @@ def main():
             print(f"  WARNING: Test data not found: {TEST1_DATA_PATH}")
         else:
             test1_output = os.path.join(results_dir, f"gguf_test1_{run_name}.json")
-            gguf_test1_results = run_test1_gguf(model, tokenizer, TEST1_DATA_PATH, test1_output, run_name=f"gguf_{run_name}")
+            gguf_test1_results = run_test1_gguf(model, tokenizer, TEST1_DATA_PATH, test1_output, run_name=f"gguf_{run_name}", max_samples=max_samples)
     else:
         print("\n[2/4] Skipping Test 1")
     
@@ -329,7 +349,7 @@ def main():
     if not args.skip_test2:
         print("\n[3/4] Running Test 2: Stability Check (KoMMLU)...")
         test2_output = os.path.join(results_dir, f"gguf_test2_{run_name}.json")
-        gguf_test2_results = run_test2_gguf(model, tokenizer, test2_output, run_name=f"gguf_{run_name}")
+        gguf_test2_results = run_test2_gguf(model, tokenizer, test2_output, run_name=f"gguf_{run_name}", max_samples=max_samples)
     else:
         print("\n[3/4] Skipping Test 2")
     

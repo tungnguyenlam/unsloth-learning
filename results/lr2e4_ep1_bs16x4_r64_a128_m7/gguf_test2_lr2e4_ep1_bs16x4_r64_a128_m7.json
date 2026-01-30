@@ -1,0 +1,14 @@
+{
+  "finetuned": {
+    "accuracy": 0,
+    "correct": 0,
+    "total": 0,
+    "by_subject": {}
+  },
+  "passed": {
+    "min_accuracy_met": false
+  },
+  "overall_passed": false,
+  "run_name": "gguf_lr2e4_ep1_bs16x4_r64_a128_m7",
+  "timestamp": "2026-01-30T22:19:37.764959"
+}

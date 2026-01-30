@@ -162,10 +162,17 @@ def save_plots(output_dir: str, bertscore_f1: List[float], headword_correct: Lis
 
 
 def run_test(model, tokenizer, test_data_path: str = DEFAULT_TEST_DATA, output_path: str = DEFAULT_OUTPUT, 
-             max_new_tokens: int = 256, run_name: str = None, batch_size: int = 16) -> Dict:
+             max_new_tokens: int = 256, run_name: str = None, batch_size: int = 16, max_samples: int = None) -> Dict:
     print(f"Loading test data from: {test_data_path}")
     test_data = load_test_data(test_data_path)
     print(f"Loaded {len(test_data)} samples")
+    
+    # Limit samples if max_samples is set
+    if max_samples and max_samples < len(test_data):
+        import random
+        random.seed(42)  # Reproducible sampling
+        test_data = random.sample(test_data, max_samples)
+        print(f"Using {max_samples} samples (quick mode)")
     
     questions = [d["question"] for d in test_data]
     ground_truths = [d["ground_truth"] for d in test_data]
