@@ -140,23 +140,36 @@ def run_test2_gguf(model, tokenizer, output_path: str, run_name: str = None) -> 
     
     questions = [test2.format_mcq_prompt(d["question"], d["choices"]) for d in test_data]
     ground_truths = [d["answer"] for d in test_data]
+    subjects = [d["subject"] for d in test_data]
     
     print(f"Running inference on {len(questions)} samples...")
     predictions = []
+    responses = []
     
-    for q in tqdm(questions, desc="GGUF KoMMLU"):
+    for i, q in enumerate(tqdm(questions, desc="GGUF KoMMLU")):
         prompt = tokenizer.apply_chat_template(
             [{"role": "user", "content": q}],
             add_generation_prompt=True,
             tokenize=False,
         )
         resp = model.generate_text(prompt, max_new_tokens=16)
+        responses.append(resp)
         answer = test2.extract_answer(resp) if test2.extract_answer(resp) is not None else -1
         predictions.append(answer)
+        # Debug: print first 3 responses
+        if i < 3:
+            print(f"  Sample {i}: Response='{resp[:50]}...' -> Pred={answer}")
     
     accuracy = test2.compute_accuracy(predictions, ground_truths)
+    by_subject = test2.compute_accuracy_by_subject(predictions, ground_truths, subjects)
+    
     results = {
-        "finetuned": {"accuracy": accuracy["accuracy"], "correct": accuracy["correct"], "total": accuracy["total"]},
+        "finetuned": {
+            "accuracy": accuracy["accuracy"], 
+            "correct": accuracy["correct"], 
+            "total": accuracy["total"],
+            "by_subject": by_subject
+        },
         "passed": {"min_accuracy_met": accuracy["accuracy"] >= 0.30},
         "overall_passed": accuracy["accuracy"] >= 0.30,
         "run_name": run_name,
@@ -164,10 +177,18 @@ def run_test2_gguf(model, tokenizer, output_path: str, run_name: str = None) -> 
     }
     
     print(f"\nAccuracy: {results['finetuned']['accuracy']:.2%}")
+    print("\nBy Subject:")
+    for subj, data in by_subject.items():
+        print(f"  {subj}: {data['accuracy']:.2%} ({data['correct']}/{data['total']})")
     
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
+    
+    # Save detailed results and plots
+    output_dir = os.path.dirname(output_path)
+    test2.save_detailed_results(output_dir, test_data, predictions, responses, run_name)
+    test2.save_plots(output_dir, by_subject, accuracy["accuracy"], run_name)
     
     return results
 
