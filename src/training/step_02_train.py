@@ -72,6 +72,7 @@ def main():
     parser.add_argument("--eval-split", type=float, default=EVAL_SPLIT)
     parser.add_argument("--no-grad-ckpt", action="store_true", help="Disable gradient checkpointing for faster training (uses more VRAM)")
     parser.add_argument("--model-name", type=str, default=None, help="Override base model name (e.g., unsloth/gemma-3-270m-it)")
+    parser.add_argument("--logging-steps", type=int, default=10, help="Log every N steps (default: 10)")
     parser.add_argument("--load-in-4bit", type=lambda x: x.lower() == 'true', default=True, 
                        help="Load model in 4-bit quantization (default: True)")
     args = parser.parse_args()
@@ -214,7 +215,7 @@ def main():
         warmup_steps=WARMUP_STEPS,
         learning_rate=args.learning_rate,
         num_train_epochs=args.epochs,
-        logging_steps=10,
+        logging_steps=args.logging_steps,
         optim="adamw_8bit",
         weight_decay=0.01,
         lr_scheduler_type="cosine",
