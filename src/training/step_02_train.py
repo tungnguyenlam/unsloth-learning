@@ -186,21 +186,21 @@ def main():
         )
         print(f"  Wandb run: {run_name}")
     
-    # Calculate eval_steps to evaluate exactly 10 times per epoch
+    # Calculate eval_steps to evaluate roughly 10 times per epoch
     eval_steps_value = None
     save_steps_value = 500
     if eval_dataset is not None:
         steps_per_epoch = len(train_dataset) // (args.batch_size * args.grad_accum)
-        eval_steps_value = max(1, steps_per_epoch // 5)  # Eval 5x per epoch
-        save_steps_value = eval_steps_value * 10  # Save once per epoch (must be multiple of eval_steps)
+        eval_steps_value = max(1, steps_per_epoch // 10)  # Eval 10x per epoch
+        save_steps_value = eval_steps_value * 2  # Save every 2nd eval (5x per epoch)
         print(f"  Steps per epoch: {steps_per_epoch}")
-        print(f"  Eval steps (10x per epoch): {eval_steps_value}")
-        print(f"  Save steps: {save_steps_value}")
+        print(f"  Eval steps (10x/epoch): {eval_steps_value}")
+        print(f"  Save steps (5x/epoch):  {save_steps_value}")
     
     trainer_args = SFTConfig(
         dataset_text_field="text",
         per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=args.batch_size * 2,  # Safer eval batch size to avoid spikes (was * grad_accum)
+        per_device_eval_batch_size=args.batch_size,  # Same as train to prevent OOM
         gradient_accumulation_steps=args.grad_accum,
         warmup_steps=WARMUP_STEPS,
         learning_rate=args.learning_rate,
@@ -213,7 +213,8 @@ def main():
         output_dir=OUTPUT_DIR,
         report_to="wandb" if use_wandb else "none",
         save_steps=save_steps_value,
-        save_total_limit=2,
+        save_total_limit=3,
+        max_grad_norm=1.0,  # Prevent gradient explosion
         eval_strategy="steps" if eval_dataset is not None else "no",
         eval_steps=eval_steps_value,
         load_best_model_at_end=True if eval_dataset is not None else False,

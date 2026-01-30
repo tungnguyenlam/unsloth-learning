@@ -12,8 +12,8 @@ MAX_SEQ_LENGTH_DEFAULT = 2048  # Fallback if auto-detect not run
 LOAD_IN_4BIT = True  # QLoRA: Load base model in 4-bit quantization
 
 # LoRA Configuration
-LORA_R = 16
-LORA_ALPHA = 32
+LORA_R = 64          # Increased for knowledge injection (vocab learning)
+LORA_ALPHA = 128     # Standard rule: Alpha = 2 * Rank
 LORA_DROPOUT = 0
 TARGET_MODULES = [
     "q_proj", "k_proj", "v_proj", "o_proj",
@@ -21,10 +21,10 @@ TARGET_MODULES = [
 ]
 
 # Training Configuration
-LEARNING_RATE = 2e-5
-NUM_EPOCHS = 3
-BATCH_SIZE = 32
-GRADIENT_ACCUMULATION_STEPS = 1
+LEARNING_RATE = 2e-4  # Optimized for QLoRA
+NUM_EPOCHS = 1        # Single epoch recommended for high-diversity data
+BATCH_SIZE = 16       # Per-device batch size (conservative for 32GB+ VRAM)
+GRADIENT_ACCUMULATION_STEPS = 4  # Effective batch size = 16 * 4 = 64
 WARMUP_STEPS = 100
 MAX_STEPS = None
 
