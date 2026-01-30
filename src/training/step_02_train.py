@@ -167,6 +167,7 @@ def main():
     
     if use_wandb:
         run_name = args.wandb_run_name or get_wandb_run_name(
+            model_name=model_name,
             learning_rate=args.learning_rate,
             epochs=args.epochs,
             batch_size=args.batch_size,
@@ -267,6 +268,7 @@ def main():
     
     # Generate run name for saving
     run_name = get_wandb_run_name(
+        model_name=model_name,
         learning_rate=args.learning_rate,
         epochs=args.epochs,
         batch_size=args.batch_size,

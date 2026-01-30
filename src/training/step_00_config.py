@@ -98,6 +98,7 @@ WANDB_PROJECT = "gemma3-military-finetune"
 
 
 def generate_run_name(
+    model_name: str = None,
     learning_rate: float = None,
     epochs: int = None,
     batch_size: int = None,
@@ -106,6 +107,7 @@ def generate_run_name(
     lora_alpha: int = None,
     target_modules: list = None,
 ) -> str:
+    model_name = model_name or MODEL_NAME
     learning_rate = learning_rate or LEARNING_RATE
     epochs = epochs or NUM_EPOCHS
     batch_size = batch_size or BATCH_SIZE
@@ -114,13 +116,17 @@ def generate_run_name(
     lora_alpha = lora_alpha or LORA_ALPHA
     target_modules = target_modules or TARGET_MODULES
     
+    # Get model family and size (e.g., "gemma3-4b", "qwen-0.5b")
+    model_tag = get_hf_model_base_name(model_name).replace("-military", "")
+    
     lr_str = f"{learning_rate:.0e}".replace("e-0", "e-").replace("e-", "e")
     num_modules = len(target_modules)
     
-    return f"lr{lr_str}_ep{epochs}_bs{batch_size}x{grad_accum}_r{lora_r}_a{lora_alpha}_m{num_modules}"
+    return f"{model_tag}_lr{lr_str}_ep{epochs}_bs{batch_size}x{grad_accum}_r{lora_r}_a{lora_alpha}_m{num_modules}"
 
 
 def get_hf_model_name(
+    model_name: str = None,
     learning_rate: float = None,
     epochs: int = None,
     batch_size: int = None,
@@ -129,11 +135,13 @@ def get_hf_model_name(
     lora_alpha: int = None,
     target_modules: list = None,
 ) -> str:
-    run_name = generate_run_name(learning_rate, epochs, batch_size, grad_accum, lora_r, lora_alpha, target_modules)
-    return f"{HF_MODEL_BASE_NAME}-{run_name}"
+    run_name = generate_run_name(model_name, learning_rate, epochs, batch_size, grad_accum, lora_r, lora_alpha, target_modules)
+    hf_base = get_hf_model_base_name(model_name)
+    return f"{hf_base}-{run_name}"
 
 
 def get_ollama_model_name(
+    model_name: str = None,
     learning_rate: float = None,
     epochs: int = None,
     batch_size: int = None,
@@ -142,11 +150,13 @@ def get_ollama_model_name(
     lora_alpha: int = None,
     target_modules: list = None,
 ) -> str:
-    run_name = generate_run_name(learning_rate, epochs, batch_size, grad_accum, lora_r, lora_alpha, target_modules)
-    return f"{OLLAMA_MODEL_BASE_NAME}-{run_name}"
+    run_name = generate_run_name(model_name, learning_rate, epochs, batch_size, grad_accum, lora_r, lora_alpha, target_modules)
+    ollama_base = get_hf_model_base_name(model_name).replace("-military", "-mil")
+    return f"{ollama_base}-{run_name}"
 
 
 def get_wandb_run_name(
+    model_name: str = None,
     learning_rate: float = None,
     epochs: int = None,
     batch_size: int = None,
@@ -155,7 +165,7 @@ def get_wandb_run_name(
     lora_alpha: int = None,
     target_modules: list = None,
 ) -> str:
-    return generate_run_name(learning_rate, epochs, batch_size, grad_accum, lora_r, lora_alpha, target_modules)
+    return generate_run_name(model_name, learning_rate, epochs, batch_size, grad_accum, lora_r, lora_alpha, target_modules)
 
 
 # Evaluation Configuration
