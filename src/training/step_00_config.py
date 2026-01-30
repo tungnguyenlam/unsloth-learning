@@ -55,10 +55,43 @@ DETECTED_CONFIG_PATH = os.path.join(OUTPUT_DIR, "detected_config.json")
 # HuggingFace Configuration
 HF_USERNAME = "mainguyenngoc"
 HF_TOKEN = ""
-HF_MODEL_BASE_NAME = "gemma3-4b-military"
+
+def get_model_size_tag(model_name: str = None) -> str:
+    """Extract model size from model name (e.g., '4b', '1b', '270m')."""
+    model_name = model_name or MODEL_NAME
+    model_name_lower = model_name.lower()
+    
+    # Common size patterns
+    import re
+    # Match patterns like "4b", "1b", "270m", "0.5b"
+    match = re.search(r'(\d+\.?\d*)(b|m)', model_name_lower)
+    if match:
+        return match.group(0)  # e.g., "4b", "270m", "0.5b"
+    return "unknown"
+
+def get_hf_model_base_name(model_name: str = None) -> str:
+    """Generate base name for HuggingFace model."""
+    model_name = model_name or MODEL_NAME
+    size_tag = get_model_size_tag(model_name)
+    
+    # Extract model family (gemma, llama, qwen, etc.)
+    model_name_lower = model_name.lower()
+    if "gemma" in model_name_lower:
+        family = "gemma3"
+    elif "llama" in model_name_lower:
+        family = "llama"
+    elif "qwen" in model_name_lower:
+        family = "qwen"
+    else:
+        family = "model"
+    
+    return f"{family}-{size_tag}-military"
+
+# Backward compatibility
+HF_MODEL_BASE_NAME = get_hf_model_base_name()
 
 # Ollama Configuration
-OLLAMA_MODEL_BASE_NAME = "gemma3-military"
+OLLAMA_MODEL_BASE_NAME = get_hf_model_base_name().replace("-military", "-mil")
 
 # Weights & Biases Configuration
 WANDB_PROJECT = "gemma3-military-finetune"
