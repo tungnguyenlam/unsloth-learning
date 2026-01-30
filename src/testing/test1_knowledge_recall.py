@@ -1,5 +1,36 @@
 """
 Test 1: Knowledge Recall - Prove the model learned the military vocabulary.
+
+PURPOSE:
+    This test evaluates whether the fine-tuned model has successfully learned
+    the military vocabulary knowledge from the training data. It measures the
+    model's ability to accurately recall and explain military terms.
+
+EVALUATION METRICS:
+    1. BERTScore F1 (threshold: 0.70)
+       - Measures semantic similarity between model predictions and ground truth
+       - Uses multilingual BERT for Korean language support
+       - Higher score = better semantic match
+    
+    2. Headword Recall (threshold: 0.80)
+       - Checks if the main Korean term (headword) appears in the response
+       - Critical for vocabulary tasks: model must name the term correctly
+       - Extracted from ground truth using regex pattern for Korean characters
+    
+    3. Abbreviation Match (informational)
+       - Checks if abbreviations (e.g., TBM, LGW) are correctly mentioned
+       - Extracted from ground truth using pattern: ☜ [ABBREVIATION]
+
+TEST DATA FORMAT (JSONL):
+    {"question": "전술 탄도 미사일이란?", "ground_truth": "전술 탄도 미사일은(는)..."}
+
+PASS CRITERIA:
+    - BERTScore F1 >= 0.70 AND Headword Recall >= 0.80
+
+USAGE:
+    # Called from step_03_test_fp16.py or step_05_test_gguf.py
+    import test1_knowledge_recall as test1
+    test1.run_test(model, tokenizer, test_data_path, output_path)
 """
 
 import os
@@ -139,44 +170,25 @@ def run_test(model, tokenizer, test_data_path: str = DEFAULT_TEST_DATA, output_p
     questions = [d["question"] for d in test_data]
     ground_truths = [d["ground_truth"] for d in test_data]
     
-    print(f"\nGenerating predictions (single processing for accuracy)...")
-    predictions = []
+    print(f"\nGenerating predictions (batch_size={batch_size}, left-padding)...")
     
-    # Process one at a time to avoid padding issues
-    for i, question in enumerate(tqdm(questions, desc="Inference")):
-        # Prepare message in Gemma-3 multimodal format
-        messages = [{
-            "role": "user",
-            "content": [{"type": "text", "text": question}]
-        }]
-        
-        # Tokenize single input (no padding needed)
-        inputs = tokenizer.apply_chat_template(
-            messages, 
-            add_generation_prompt=True, 
-            tokenize=True, 
-            return_tensors="pt", 
-            return_dict=True
-        ).to(model.device)
-        
-        input_len = inputs["input_ids"].shape[1]
-        
-        # Generate
-        outputs = model.generate(
-            **inputs, 
-            max_new_tokens=max_new_tokens, 
-            do_sample=False, 
-            pad_token_id=tokenizer.eos_token_id
-        )
-        
-        # Decode - slice from input length to get only generated tokens
-        generated_tokens = outputs[0][input_len:]
-        pred = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-        predictions.append(pred)
-        
-        # Debug: print first few
-        if i < 2:
-            print(f"    Sample {i}: '{pred[:80]}...'")
+    # Import batch utilities
+    from batch_utils import batch_generate, format_chat_prompts
+    
+    # Format prompts using chat template
+    prompts = format_chat_prompts(questions, tokenizer, multimodal_format=True)
+    
+    # Generate predictions using batch processing with left padding
+    predictions = batch_generate(
+        model, tokenizer, prompts,
+        max_new_tokens=max_new_tokens,
+        batch_size=batch_size,
+        desc="Knowledge Recall"
+    )
+    
+    # Debug: print first few
+    for i in range(min(2, len(predictions))):
+        print(f"    Sample {i}: '{predictions[i][:80]}...'")
     
     print("\nComputing metrics...")
     bertscore = compute_bertscore(predictions, ground_truths)

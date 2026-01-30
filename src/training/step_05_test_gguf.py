@@ -1,9 +1,37 @@
 """
 Step 05: Test GGUF Model & Compare
-- Load GGUF model via llama-cpp-python
-- Run Test 1: Knowledge Recall
-- Run Test 2: Stability Check (KoMMLU)
-- Run Test 3: Compare FP16 vs GGUF
+
+PURPOSE:
+    Test the quantized GGUF model and compare its performance against the
+    FP16 model to measure quantization loss.
+
+TESTS RUN:
+    1. Test 1: Knowledge Recall (GGUF)
+       - Same as FP16 test but using GGUF model via llama-cpp-python
+       - Verifies vocabulary knowledge survives quantization
+    
+    2. Test 2: Stability Check (GGUF)
+       - Same KoMMLU evaluation on the GGUF model
+       - Verifies general capabilities survive quantization
+    
+    3. Test 3: Quantization Comparison
+       - Compares FP16 vs GGUF results
+       - Measures quantization loss (acceptable: <5% drop)
+
+REQUIREMENTS:
+    - llama-cpp-python installed (pip install llama-cpp-python)
+    - GGUF model exported via step_04_export_gguf.py
+    - FP16 test results from step_03_test_fp16.py (for comparison)
+
+USAGE:
+    # Test auto-selected GGUF model
+    python src/training/step_05_test_gguf.py
+    
+    # Specify a specific GGUF file
+    python src/training/step_05_test_gguf.py --model path/to/model.gguf
+    
+    # Skip specific tests
+    python src/training/step_05_test_gguf.py --skip-test1 --skip-test3
 
 Run from project root: python src/training/step_05_test_gguf.py
 """

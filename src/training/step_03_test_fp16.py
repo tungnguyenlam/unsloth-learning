@@ -1,8 +1,32 @@
 """
 Step 03: Test FP16 Model
-- Load trained LoRA model
-- Run Test 1: Knowledge Recall
-- Run Test 2: Stability Check (KoMMLU)
+
+PURPOSE:
+    Test the fine-tuned LoRA model before quantization (GGUF export).
+    Validates that the model learned the military vocabulary correctly.
+
+TESTS RUN:
+    1. Test 1: Knowledge Recall
+       - Verifies the model can recall military terms and definitions
+       - Metrics: BERTScore F1 (>= 0.70), Headword Recall (>= 0.80)
+    
+    2. Test 2: Stability Check (KoMMLU)
+       - Verifies no catastrophic forgetting occurred
+       - Tests general Korean language understanding
+       - Metrics: Accuracy (>= 0.30)
+
+USAGE:
+    # Test local LoRA model (default)
+    python src/training/step_03_test_fp16.py
+    
+    # Test a HuggingFace model directly
+    python src/training/step_03_test_fp16.py --hf-model google/gemma-3-4b-it
+    
+    # Skip specific tests
+    python src/training/step_03_test_fp16.py --skip-test1 --skip-test2
+    
+    # Adjust batch size
+    python src/training/step_03_test_fp16.py --batch-size 8
 
 Run from project root: python src/training/step_03_test_fp16.py
 """
@@ -30,9 +54,11 @@ from step_00_config import (
 
 def main():
     parser = get_base_parser("Step 03: Test FP16 Model")
-    parser.add_argument("--skip-test1", action="store_true")
-    parser.add_argument("--skip-test2", action="store_true")
+    parser.add_argument("--skip-test1", action="store_true", help="Skip Test 1 (Knowledge Recall)")
+    parser.add_argument("--skip-test2", action="store_true", help="Skip Test 2 (Stability Check)")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size for inference (default: 16)")
+    parser.add_argument("--hf-model", type=str, default=None, 
+                       help="HuggingFace model name to test instead of local LoRA model (e.g., 'google/gemma-3-4b-it')")
     args = parser.parse_args()
     
     max_seq_length = get_max_seq_length()
@@ -51,22 +77,43 @@ def main():
     results_dir = get_results_dir_for_run(run_name)
     print(f"Results Dir: {results_dir}")
     
-    if not os.path.exists(LORA_MODEL_DIR):
-        print(f"ERROR: LoRA model not found at: {LORA_MODEL_DIR}")
-        print("Run src/training/step_02_train.py first")
-        sys.exit(1)
-    
-    # Load Model
-    print("\n[1/3] Loading trained model...")
-    from unsloth import FastModel, FastLanguageModel
-    
-    model, tokenizer = FastModel.from_pretrained(
-        model_name=LORA_MODEL_DIR,
-        max_seq_length=max_seq_length,
-        load_in_4bit=LOAD_IN_4BIT,
-    )
-    FastLanguageModel.for_inference(model)
-    print("  Model loaded successfully")
+    # Determine which model to load
+    if args.hf_model:
+        # Load HuggingFace model directly
+        print(f"\n[1/3] Loading HuggingFace model: {args.hf_model}...")
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+        import torch
+        
+        tokenizer = AutoTokenizer.from_pretrained(args.hf_model, trust_remote_code=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.hf_model,
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=True
+        )
+        # Update run_name to reflect the HF model
+        hf_model_short = args.hf_model.split("/")[-1]
+        run_name = f"hf_{hf_model_short}"
+        results_dir = get_results_dir_for_run(run_name)
+        print(f"  Model loaded successfully")
+        print(f"  Updated run_name: {run_name}")
+    else:
+        # Load local LoRA model
+        if not os.path.exists(LORA_MODEL_DIR):
+            print(f"ERROR: LoRA model not found at: {LORA_MODEL_DIR}")
+            print("Run src/training/step_02_train.py first, or use --hf-model to test a HuggingFace model")
+            sys.exit(1)
+        
+        print("\n[1/3] Loading trained LoRA model...")
+        from unsloth import FastModel, FastLanguageModel
+        
+        model, tokenizer = FastModel.from_pretrained(
+            model_name=LORA_MODEL_DIR,
+            max_seq_length=max_seq_length,
+            load_in_4bit=LOAD_IN_4BIT,
+        )
+        FastLanguageModel.for_inference(model)
+        print("  Model loaded successfully")
     
     # Test 1: Knowledge Recall
     if not args.skip_test1:

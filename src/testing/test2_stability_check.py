@@ -1,5 +1,52 @@
 """
 Test 2: Stability Check - Prove no catastrophic forgetting using KoMMLU.
+
+PURPOSE:
+    This test evaluates whether fine-tuning on military vocabulary has caused
+    "catastrophic forgetting" - loss of the model's general Korean language
+    understanding and reasoning abilities.
+
+DATASET:
+    KoMMLU (Korean Massive Multitask Language Understanding)
+    - A Korean benchmark for evaluating language models on diverse topics
+    - Subjects tested: korean_history, korean_geography, general_knowledge, 
+      civil_law, criminal_law
+    - 20 samples per subject (100 total by default)
+
+EVALUATION METRICS:
+    1. Overall Accuracy (minimum threshold: 0.30)
+       - Percentage of correct MCQ answers
+       - Threshold is conservative since fine-tuning focuses on vocabulary, not MCQ
+    
+    2. Per-Subject Accuracy
+       - Breakdown by knowledge domain
+       - Helps identify if specific areas were affected
+    
+    3. Performance Drop vs Base Model (optional, threshold: <10%)
+       - Only computed if base model evaluation is enabled
+       - Measures degradation from original model capabilities
+
+MCQ FORMAT:
+    질문: [Question]
+    A. [Choice A]
+    B. [Choice B]
+    C. [Choice C]
+    D. [Choice D]
+    
+    정답을 A, B, C, D 중 하나로 답하세요. 정답:
+
+ANSWER EXTRACTION:
+    - First checks if response starts with A/B/C/D
+    - Falls back to finding first occurrence of A/B/C/D in response
+
+PASS CRITERIA:
+    - Accuracy >= 0.30 (30%)
+    - If base model compared: Performance drop < 10%
+
+USAGE:
+    # Called from step_03_test_fp16.py or step_05_test_gguf.py
+    import test2_stability_check as test2
+    test2.run_test(model, tokenizer, output_path)
 """
 
 import os
@@ -170,47 +217,31 @@ def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokeniz
     ground_truths = [d["answer"] for d in test_data]
     subjects = [d["subject"] for d in test_data]
     
-    print(f"\nEvaluating fine-tuned model (single processing for accuracy)...")
-    ft_predictions = []
-    ft_responses = []
+    # Import batch utilities
+    from batch_utils import batch_generate, format_chat_prompts
     
-    # Process one at a time to avoid padding issues
-    for i, question in enumerate(tqdm(questions, desc="Fine-tuned")):
-        # Prepare message in Gemma-3 multimodal format
-        messages = [{
-            "role": "user",
-            "content": [{"type": "text", "text": question}]
-        }]
-        
-        # Tokenize single input (no padding needed)
-        inputs = finetuned_tokenizer.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_tensors="pt",
-            return_dict=True
-        ).to(finetuned_model.device)
-        
-        input_len = inputs["input_ids"].shape[1]
-        
-        # Generate
-        outputs = finetuned_model.generate(
-            **inputs,
-            max_new_tokens=16,
-            do_sample=False,
-            pad_token_id=finetuned_tokenizer.eos_token_id
-        )
-        
-        # Decode - slice from input length to get only generated tokens
-        generated_tokens = outputs[0][input_len:]
-        resp = finetuned_tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-        ft_responses.append(resp)
+    print(f"\nEvaluating fine-tuned model (batch_size={batch_size}, left-padding)...")
+    
+    # Format prompts using chat template
+    prompts = format_chat_prompts(questions, finetuned_tokenizer, multimodal_format=True)
+    
+    # Generate responses using batch processing with left padding
+    ft_responses = batch_generate(
+        finetuned_model, finetuned_tokenizer, prompts,
+        max_new_tokens=16,
+        batch_size=batch_size,
+        desc="Fine-tuned MCQ"
+    )
+    
+    # Extract answers
+    ft_predictions = []
+    for resp in ft_responses:
         ans = extract_answer(resp)
         ft_predictions.append(ans if ans is not None else -1)
-        
-        # Debug: print first few
-        if i < 2:
-            print(f"    Sample {i}: Response='{resp[:50]}...' -> Pred={ans}")
+    
+    # Debug: print first few
+    for i in range(min(2, len(ft_responses))):
+        print(f"    Sample {i}: Response='{ft_responses[i][:50]}...' -> Pred={ft_predictions[i]}")
     
     ft_accuracy = compute_accuracy(ft_predictions, ground_truths)
     ft_by_subject = compute_accuracy_by_subject(ft_predictions, ground_truths, subjects)
@@ -227,39 +258,22 @@ def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokeniz
     }
     
     if base_model is not None:
-        print(f"\nEvaluating base model (single processing for accuracy)...")
-        base_predictions = []
+        print(f"\nEvaluating base model (batch_size={batch_size}, left-padding)...")
         
-        # Process one at a time to avoid padding issues
-        for i, question in enumerate(tqdm(questions, desc="Base model")):
-            # Prepare message in Gemma-3 multimodal format
-            messages = [{
-                "role": "user",
-                "content": [{"type": "text", "text": question}]
-            }]
-            
-            # Tokenize single input (no padding needed)
-            inputs = base_tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                tokenize=True,
-                return_tensors="pt",
-                return_dict=True
-            ).to(base_model.device)
-            
-            input_len = inputs["input_ids"].shape[1]
-            
-            # Generate
-            outputs = base_model.generate(
-                **inputs,
-                max_new_tokens=16,
-                do_sample=False,
-                pad_token_id=base_tokenizer.eos_token_id
-            )
-            
-            # Decode - slice from input length to get only generated tokens
-            generated_tokens = outputs[0][input_len:]
-            resp = base_tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+        # Format prompts for base model
+        base_prompts = format_chat_prompts(questions, base_tokenizer, multimodal_format=True)
+        
+        # Generate responses using batch processing
+        base_responses = batch_generate(
+            base_model, base_tokenizer, base_prompts,
+            max_new_tokens=16,
+            batch_size=batch_size,
+            desc="Base MCQ"
+        )
+        
+        # Extract answers
+        base_predictions = []
+        for resp in base_responses:
             ans = extract_answer(resp)
             base_predictions.append(ans if ans is not None else -1)
         

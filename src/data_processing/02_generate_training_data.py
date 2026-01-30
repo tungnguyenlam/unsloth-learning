@@ -5,11 +5,34 @@ This script converts the combined military vocabulary dataset into
 instruction-tuned Q&A pairs in Gemma 3 chat format.
 
 Question Types:
-- Type 2: Classification (What type is X?)
-- Type 4: Category Membership (What category does X belong to?)
-- Type 7: Open Explanation (Explain X / What is X?)
+- Type 2: Classification (What type is X?) - requires Hypernym
+- Type 3: Reverse Abbreviation Lookup (What is the full name of X?) - requires Abbreviation
+- Type 4: Category Membership (What category does X belong to?) - requires Category or Hypernym
+- Type 5: Mechanism/Principle (How does X work?) - always available
+- Type 6: Characteristics (What are the characteristics of X?) - always available
+- Type 7: Open Explanation (Explain X / What is X?) - always available
+  - 7_abbrev: Uses Abbreviation as the question term
+  - 7_english: Uses Original_Word (English) as the question term
+- Type 8: Information Extraction (Extract specific info from context) - always available
+
+Dataset Columns Used:
+- Headword: Main Korean term (required)
+- Meaning: Definition (required)
+- Original_Word: English equivalent
+- Hanja: Chinese characters (한자)
+- Abbreviation: Short form
+- Category: Topic/field category
+- Hypernym: Parent category ("is a type of")
+- Hyponym: Child categories (subtypes)
+- Synonym: Alternative terms
+- Related_Word: Related vocabulary
+- Dictionary_Name: Source dictionary
 
 Output Format: JSONL with Gemma 3 chat template
+
+Training Recommendation:
+- With QA_PAIRS_PER_ROW=4 and ~140,000 samples, use 1 epoch
+- More diverse question types = better generalization = fewer epochs needed
 """
 
 import os
@@ -27,7 +50,8 @@ RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
 
 # Number of Q&A pairs to generate per row (randomly select from available types)
-QA_PAIRS_PER_ROW = 2
+# With more diverse types, 1 epoch is recommended for training
+QA_PAIRS_PER_ROW = 4
 
 # ============================================================================
 # QUESTION TEMPLATES
@@ -75,11 +99,24 @@ TYPE6_TEMPLATES = [
     "{Headword}의 특성을 설명해주세요.",
 ]
 
-# Type 5: Mechanism/Principle
+# Type 3: Reverse Abbreviation Lookup (requires Abbreviation)
+TYPE3_TEMPLATES = [
+    "{Abbreviation}의 전체 명칭은 무엇인가요?",
+    "{Abbreviation}는 무엇의 약어인가요?",
+    "{Abbreviation}의 원래 용어는 무엇입니까?",
+]
+
+# Type 5: Mechanism/Principle (always available)
 TYPE5_TEMPLATES = [
     "{Headword}은(는) 어떤 원리로 작동하나요?",
     "{Headword}의 작동 원리는 무엇인가요?",
     "{Headword}은(는) 어떻게 동작하나요?",
+]
+
+# Type 8: Information Extraction (context-based)
+TYPE8_TEMPLATES = [
+    "다음 정보에서 {Headword}의 정의를 찾아주세요: {context}",
+    "아래 내용에서 {Headword}에 대한 설명을 추출해주세요: {context}",
 ]
 
 
@@ -105,13 +142,21 @@ def generate_full_response(row: pd.Series) -> str:
     """
     parts = []
     
-    # Main definition with original word
+    # Main definition with headword, hanja, and original word
     headword = row['Headword']
     original_word = row.get('Original_Word', '')
+    hanja = row.get('Hanja', '')
     meaning = row.get('Meaning', '')
     
+    # Build the term representation: headword(hanja/original_word)
+    term_parts = []
+    if is_valid(hanja):
+        term_parts.append(hanja)
     if is_valid(original_word):
-        parts.append(f"{headword}({original_word})은(는) {meaning}")
+        term_parts.append(original_word)
+    
+    if term_parts:
+        parts.append(f"{headword}({', '.join(term_parts)})은(는) {meaning}")
     else:
         parts.append(f"{headword}은(는) {meaning}")
     
@@ -145,6 +190,11 @@ def generate_full_response(row: pd.Series) -> str:
     if is_valid(related):
         parts.append(f"관련어로는 {related}가(이) 있다.")
     
+    # Add dictionary source
+    dictionary = row.get('Dictionary_Name', '')
+    if is_valid(dictionary):
+        parts.append(f"이 용어는 {dictionary}에 수록되어 있다.")
+    
     return " ".join(parts)
 
 
@@ -173,14 +223,22 @@ def generate_classification_response(row: pd.Series) -> str:
     """
     headword = row['Headword']
     original_word = row.get('Original_Word', '')
+    hanja = row.get('Hanja', '')
     hypernym = row.get('Hypernym', '')
     meaning = row.get('Meaning', '')
     
     parts = []
     
-    # Start with classification
+    # Build the term representation
+    term_parts = []
+    if is_valid(hanja):
+        term_parts.append(hanja)
     if is_valid(original_word):
-        parts.append(f"{headword}({original_word})은(는) {hypernym}의 한 종류입니다.")
+        term_parts.append(original_word)
+    
+    # Start with classification
+    if term_parts:
+        parts.append(f"{headword}({', '.join(term_parts)})은(는) {hypernym}의 한 종류입니다.")
     else:
         parts.append(f"{headword}은(는) {hypernym}의 한 종류입니다.")
     
@@ -209,6 +267,121 @@ def generate_characteristics_response(row: pd.Series) -> str:
         parts.append(f"하위 유형으로는 {hyponym} 등이 있습니다.")
     
     return " ".join(parts)
+
+
+def generate_abbreviation_response(row: pd.Series) -> str:
+    """
+    Generate a response for Type 3 (Reverse Abbreviation Lookup) questions.
+    """
+    headword = row['Headword']
+    abbreviation = row.get('Abbreviation', '')
+    original_word = row.get('Original_Word', '')
+    hanja = row.get('Hanja', '')
+    meaning = row.get('Meaning', '')
+    
+    parts = []
+    
+    # Build the full term representation
+    term_parts = []
+    if is_valid(hanja):
+        term_parts.append(hanja)
+    if is_valid(original_word):
+        term_parts.append(original_word)
+    
+    if term_parts:
+        parts.append(f"{abbreviation}는(은) {headword}({', '.join(term_parts)})의 약어입니다.")
+    else:
+        parts.append(f"{abbreviation}는(은) {headword}의 약어입니다.")
+    
+    # Add brief meaning
+    if is_valid(meaning):
+        brief_meaning = meaning.split('.')[0] + '.'
+        parts.append(brief_meaning)
+    
+    return " ".join(parts)
+
+
+def generate_mechanism_response(row: pd.Series) -> str:
+    """
+    Generate a response for Type 5 (Mechanism/Principle) questions.
+    """
+    headword = row['Headword']
+    meaning = row.get('Meaning', '')
+    original_word = row.get('Original_Word', '')
+    hanja = row.get('Hanja', '')
+    
+    parts = []
+    
+    # Build the term representation
+    term_parts = []
+    if is_valid(hanja):
+        term_parts.append(hanja)
+    if is_valid(original_word):
+        term_parts.append(original_word)
+    
+    if term_parts:
+        parts.append(f"{headword}({', '.join(term_parts)})의 작동 원리는 다음과 같습니다: {meaning}")
+    else:
+        parts.append(f"{headword}의 작동 원리는 다음과 같습니다: {meaning}")
+    
+    return " ".join(parts)
+
+
+def generate_extraction_context(row: pd.Series) -> str:
+    """
+    Generate a messy context string for Type 8 (Information Extraction) questions.
+    This simulates noisy/verbose input that the model needs to parse.
+    """
+    parts = []
+    
+    # Add various fields in a somewhat messy format
+    headword = row['Headword']
+    meaning = row.get('Meaning', '')
+    category = row.get('Category', '')
+    hypernym = row.get('Hypernym', '')
+    hyponym = row.get('Hyponym', '')
+    synonym = row.get('Synonym', '')
+    related = row.get('Related_Word', '')
+    abbreviation = row.get('Abbreviation', '')
+    original_word = row.get('Original_Word', '')
+    hanja = row.get('Hanja', '')
+    dictionary = row.get('Dictionary_Name', '')
+    
+    # Build messy context with mixed formatting
+    if is_valid(category):
+        parts.append(f"분류: {category}")
+    if is_valid(headword):
+        parts.append(f"용어명: {headword}")
+    if is_valid(hanja):
+        parts.append(f"한자: {hanja}")
+    if is_valid(original_word):
+        parts.append(f"영문: {original_word}")
+    if is_valid(abbreviation):
+        parts.append(f"약어: {abbreviation}")
+    if is_valid(meaning):
+        parts.append(f"정의: {meaning}")
+    if is_valid(hypernym):
+        parts.append(f"상위어: {hypernym}")
+    if is_valid(hyponym):
+        parts.append(f"하위어: {hyponym}")
+    if is_valid(synonym):
+        parts.append(f"동의어: {synonym}")
+    if is_valid(related):
+        parts.append(f"관련어: {related}")
+    if is_valid(dictionary):
+        parts.append(f"출처: {dictionary}")
+    
+    return " | ".join(parts)
+
+
+def generate_extraction_response(row: pd.Series) -> str:
+    """
+    Generate a response for Type 8 (Information Extraction) questions.
+    """
+    headword = row['Headword']
+    meaning = row.get('Meaning', '')
+    
+    return f"{headword}의 정의: {meaning}"
 
 
 # ============================================================================
@@ -283,6 +456,32 @@ def generate_qa_pairs(row: pd.Series) -> List[Dict]:
         'type': 6,
         'templates': TYPE6_TEMPLATES,
         'response_fn': generate_characteristics_response
+    })
+    
+    # Type 3: Reverse Abbreviation Lookup (only if Abbreviation exists)
+    if is_valid(abbreviation):
+        available_types.append({
+            'type': 3,
+            'templates': TYPE3_TEMPLATES,
+            'response_fn': generate_abbreviation_response,
+            'format_args': {'Abbreviation': abbreviation}
+        })
+    
+    # Type 5: Mechanism/Principle (always available)
+    available_types.append({
+        'type': 5,
+        'templates': TYPE5_TEMPLATES,
+        'response_fn': generate_mechanism_response
+    })
+    
+    # Type 8: Information Extraction (always available)
+    # Generate context string for this type
+    context = generate_extraction_context(row)
+    available_types.append({
+        'type': 8,
+        'templates': TYPE8_TEMPLATES,
+        'response_fn': generate_extraction_response,
+        'format_args': {'context': context}
     })
     
     # Randomly select question types (avoid duplicates)
