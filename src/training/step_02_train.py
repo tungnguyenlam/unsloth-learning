@@ -75,6 +75,7 @@ def main():
     parser.add_argument("--logging-steps", type=int, default=10, help="Log every N steps (default: 10)")
     parser.add_argument("--load-in-4bit", type=lambda x: x.lower() == 'true', default=True, 
                        help="Load model in 4-bit quantization (default: True)")
+    parser.add_argument("--push-checkpoints", action="store_true", default=True, help="Push intermediate checkpoints to HuggingFace Hub (default: True)")
     args = parser.parse_args()
     
     # Determine base model: CLI override > Config default
@@ -202,11 +203,20 @@ def main():
     if eval_dataset is not None:
         steps_per_epoch = len(train_dataset) // (args.batch_size * args.grad_accum)
         eval_steps_value = max(1, steps_per_epoch // 10)  # Eval 10x per epoch
-        save_steps_value = eval_steps_value * 2  # Save every 2nd eval (5x per epoch)
+        save_steps_value = eval_steps_value  # Save every eval (10x per epoch)
         print(f"  Steps per epoch: {steps_per_epoch}")
         print(f"  Eval steps (10x/epoch): {eval_steps_value}")
         print(f"  Save steps (5x/epoch):  {save_steps_value}")
     
+    
+    # Hugging Face Hub configuration for checkpoint pushing
+    hub_model_id = None
+    if args.push_checkpoints and args.hf_token:
+        from step_00_config import get_hf_model_base_name
+        hf_model_base_name = get_hf_model_base_name(model_name)
+        hub_model_id = f"{args.hf_username}/{hf_model_base_name}-{run_name}-checkpoints"
+        print(f"  Pushing checkpoints to: {hub_model_id}")
+
     trainer_args = SFTConfig(
         dataset_text_field="text",
         per_device_train_batch_size=args.batch_size,
@@ -231,6 +241,11 @@ def main():
         metric_for_best_model="eval_loss" if eval_dataset is not None else None,
         greater_is_better=False,
         gradient_checkpointing=use_grad_ckpt,  # Controlled via --no-grad-ckpt flag
+        # Hub arguments
+        push_to_hub=True if hub_model_id else False,
+        hub_model_id=hub_model_id,
+        hub_token=args.hf_token,
+        hub_strategy="every_save", # Push every time we save a checkpoint
     )
     
     if args.max_steps is not None:
