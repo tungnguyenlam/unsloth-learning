@@ -139,44 +139,44 @@ def run_test(model, tokenizer, test_data_path: str = DEFAULT_TEST_DATA, output_p
     questions = [d["question"] for d in test_data]
     ground_truths = [d["ground_truth"] for d in test_data]
     
-    print(f"\nGenerating predictions (batch_size={batch_size})...")
+    print(f"\nGenerating predictions (single processing for accuracy)...")
     predictions = []
     
-    # Process in batches
-    for i in tqdm(range(0, len(questions), batch_size), desc="Batch Inference"):
-        batch_questions = questions[i:i + batch_size]
-        
-        # Prepare batch messages in Gemma-3 multimodal format
-        batch_messages = [[{
+    # Process one at a time to avoid padding issues
+    for i, question in enumerate(tqdm(questions, desc="Inference")):
+        # Prepare message in Gemma-3 multimodal format
+        messages = [{
             "role": "user",
-            "content": [{"type": "text", "text": q}]
-        }] for q in batch_questions]
+            "content": [{"type": "text", "text": question}]
+        }]
         
-        # Tokenize batch with padding
-        batch_inputs = tokenizer.apply_chat_template(
-            batch_messages, 
+        # Tokenize single input (no padding needed)
+        inputs = tokenizer.apply_chat_template(
+            messages, 
             add_generation_prompt=True, 
             tokenize=True, 
-            padding=True,
             return_tensors="pt", 
             return_dict=True
         ).to(model.device)
         
-        # Generate for batch
+        input_len = inputs["input_ids"].shape[1]
+        
+        # Generate
         outputs = model.generate(
-            **batch_inputs, 
+            **inputs, 
             max_new_tokens=max_new_tokens, 
             do_sample=False, 
             pad_token_id=tokenizer.eos_token_id
         )
         
-        # Decode each output in batch
-        for j, output in enumerate(outputs):
-            # With padding, use attention_mask to find actual input length
-            actual_input_len = batch_inputs['attention_mask'][j].sum().item()
-            generated_tokens = output[actual_input_len:]
-            pred = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-            predictions.append(pred)
+        # Decode - slice from input length to get only generated tokens
+        generated_tokens = outputs[0][input_len:]
+        pred = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+        predictions.append(pred)
+        
+        # Debug: print first few
+        if i < 2:
+            print(f"    Sample {i}: '{pred[:80]}...'")
     
     print("\nComputing metrics...")
     bertscore = compute_bertscore(predictions, ground_truths)
