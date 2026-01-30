@@ -16,8 +16,9 @@ if SCRIPT_DIR not in sys.path:
 
 from step_00_config import (
     MODEL_NAME, LOAD_IN_4BIT,
-    LORA_MODEL_DIR, HF_MODEL_BASE_NAME,
-    ensure_dirs, get_base_parser, get_max_seq_length, get_saved_run_name
+    LORA_MODEL_DIR,
+    ensure_dirs, get_base_parser, get_max_seq_length, get_saved_run_name,
+    get_hf_model_base_name, load_detected_config
 )
 
 
@@ -29,12 +30,18 @@ def main():
     
     max_seq_length = get_max_seq_length()
     run_name = get_saved_run_name()
-    hf_model_name = f"{HF_MODEL_BASE_NAME}-{run_name}"
+    
+    # Get dynamic model base name from saved config
+    config = load_detected_config()
+    model_name_used = config.get("model_name", MODEL_NAME)
+    hf_base = get_hf_model_base_name(model_name_used)
+    hf_model_name = f"{hf_base}-{run_name}"
     
     print("=" * 60)
     print("STEP 06: UPLOAD TO HUGGINGFACE")
     print("=" * 60)
     print(f"\nRun Name: {run_name}")
+    print(f"Model Used: {model_name_used}")
     print(f"HF Model: {hf_model_name}")
     print(f"Max Seq Length: {max_seq_length}")
     

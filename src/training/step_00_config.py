@@ -229,7 +229,10 @@ def round_to_bucket(length: int, buckets: list = None) -> int:
 def get_base_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--data-path", type=str, default=TRAINING_DATA_PATH)
-    parser.add_argument("--hf-token", type=str, default=HF_TOKEN)
+    # Check HF_TOKEN: CLI arg > env var > config file
+    hf_token_default = HF_TOKEN or os.environ.get("HF_TOKEN", "")
+    parser.add_argument("--hf-token", type=str, default=hf_token_default,
+                       help="HuggingFace token (also reads from HF_TOKEN env var)")
     parser.add_argument("--hf-username", type=str, default=HF_USERNAME)
     return parser
 
