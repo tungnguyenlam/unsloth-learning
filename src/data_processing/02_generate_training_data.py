@@ -4,16 +4,16 @@ Generate Training Data for Military Vocabulary Fine-tuning
 This script converts the combined military vocabulary dataset into
 instruction-tuned Q&A pairs in Gemma 3 chat format.
 
-Question Types:
-- Type 2: Classification (What type is X?) - requires Hypernym
-- Type 3: Reverse Abbreviation Lookup (What is the full name of X?) - requires Abbreviation
-- Type 4: Category Membership (What category does X belong to?) - requires Category or Hypernym
-- Type 5: Mechanism/Principle (How does X work?) - always available
+Question Types (9 types):
+- Type 1: Definition Query - Headword (What is X?) - always available
+- Type 2: Definition Query - Abbreviation (What is [ABBR]?) - requires Abbreviation
+- Type 3: Definition Query - English (What is [English term]?) - requires Original_Word
+- Type 4: Classification (What type is X?) - requires Hypernym
+- Type 5: Category Membership (What category does X belong to?) - requires Category or Hypernym
 - Type 6: Characteristics (What are the characteristics of X?) - always available
-- Type 7: Open Explanation (Explain X / What is X?) - always available
-  - 7_abbrev: Uses Abbreviation as the question term
-  - 7_english: Uses Original_Word (English) as the question term
-- Type 8: Information Extraction (Extract specific info from context) - always available
+- Type 7: Abbreviation Lookup (What is the full name of [ABBR]?) - requires Abbreviation
+- Type 8: Mechanism/Principle (How does X work?) - always available
+- Type 9: Information Extraction (Extract definition from context) - always available
 
 Dataset Columns Used:
 - Headword: Main Korean term (required)
@@ -57,64 +57,64 @@ QA_PAIRS_PER_ROW = 4
 # QUESTION TEMPLATES
 # ============================================================================
 
-# Type 7: Open Explanation (always available)
-TYPE7_TEMPLATES = [
+# Type 1: Definition Query - Headword (always available)
+TYPE1_TEMPLATES = [
     "{Headword}에 대해 설명해주세요.",
     "{Headword}이(가) 무엇인가요?",
     "{Headword}란 무엇입니까?",
     "{Headword}을(를) 설명해줘.",
 ]
 
-# Type 7 variants using Abbreviation (if available)
-TYPE7_ABBREV_TEMPLATES = [
+# Type 2: Definition Query - Abbreviation (requires Abbreviation)
+TYPE2_TEMPLATES = [
     "{Abbreviation}에 대해서 설명해줘.",
     "{Abbreviation}가 무엇인가요?",
     "{Abbreviation}란?",
 ]
 
-# Type 7 variants using English term (if available)
-TYPE7_ENGLISH_TEMPLATES = [
+# Type 3: Definition Query - English (requires Original_Word)
+TYPE3_TEMPLATES = [
     "{Original_Word}가 무엇인가요?",
     "{Original_Word}에 대해 설명해주세요.",
 ]
 
-# Type 4: Category Membership (requires Category or Hypernym)
+# Type 4: Classification (requires Hypernym)
 TYPE4_TEMPLATES = [
-    "{Headword}은(는) 어떤 범주에 속하나요?",
-    "{Headword}은(는) 어떤 분야에 해당하나요?",
-    "{Headword}은(는) 무슨 영역에 속하는 용어인가요?",
-]
-
-# Type 2: Classification (requires Hypernym)
-TYPE2_TEMPLATES = [
     "{Headword}는 어떤 종류인가요?",
     "{Headword}은(는) 무엇의 한 종류인가요?",
     "{Headword}는 어떤 종류에 속하나요?",
 ]
 
-# Type 6: Characteristics (always available if Meaning exists)
+# Type 5: Category Membership (requires Category or Hypernym)
+TYPE5_TEMPLATES = [
+    "{Headword}은(는) 어떤 범주에 속하나요?",
+    "{Headword}은(는) 어떤 분야에 해당하나요?",
+    "{Headword}은(는) 무슨 영역에 속하는 용어인가요?",
+]
+
+# Type 6: Characteristics (always available)
 TYPE6_TEMPLATES = [
     "{Headword}은(는) 어떤 특성을 가지고 있나요?",
     "{Headword}의 주요 특징은 무엇인가요?",
     "{Headword}의 특성을 설명해주세요.",
 ]
 
-# Type 3: Reverse Abbreviation Lookup (requires Abbreviation)
-TYPE3_TEMPLATES = [
+# Type 7: Abbreviation Lookup (requires Abbreviation)
+TYPE7_TEMPLATES = [
     "{Abbreviation}의 전체 명칭은 무엇인가요?",
     "{Abbreviation}는 무엇의 약어인가요?",
     "{Abbreviation}의 원래 용어는 무엇입니까?",
 ]
 
-# Type 5: Mechanism/Principle (always available)
-TYPE5_TEMPLATES = [
+# Type 8: Mechanism/Principle (always available)
+TYPE8_TEMPLATES = [
     "{Headword}은(는) 어떤 원리로 작동하나요?",
     "{Headword}의 작동 원리는 무엇인가요?",
     "{Headword}은(는) 어떻게 동작하나요?",
 ]
 
-# Type 8: Information Extraction (context-based)
-TYPE8_TEMPLATES = [
+# Type 9: Information Extraction (always available)
+TYPE9_TEMPLATES = [
     "다음 정보에서 {Headword}의 정의를 찾아주세요: {context}",
     "아래 내용에서 {Headword}에 대한 설명을 추출해주세요: {context}",
 ]
@@ -138,7 +138,7 @@ def is_valid(value) -> bool:
 def generate_full_response(row: pd.Series) -> str:
     """
     Generate a comprehensive response using all available fields.
-    This is used for Type 7 (Open Explanation) questions.
+    This is used for Type 1, 2, 3 (Definition Query) questions.
     """
     parts = []
     
@@ -200,7 +200,7 @@ def generate_full_response(row: pd.Series) -> str:
 
 def generate_category_response(row: pd.Series) -> str:
     """
-    Generate a response for Type 4 (Category Membership) questions.
+    Generate a response for Type 5 (Category Membership) questions.
     """
     headword = row['Headword']
     category = row.get('Category', '')
@@ -219,7 +219,7 @@ def generate_category_response(row: pd.Series) -> str:
 
 def generate_classification_response(row: pd.Series) -> str:
     """
-    Generate a response for Type 2 (Classification) questions.
+    Generate a response for Type 4 (Classification) questions.
     """
     headword = row['Headword']
     original_word = row.get('Original_Word', '')
@@ -271,7 +271,7 @@ def generate_characteristics_response(row: pd.Series) -> str:
 
 def generate_abbreviation_response(row: pd.Series) -> str:
     """
-    Generate a response for Type 3 (Reverse Abbreviation Lookup) questions.
+    Generate a response for Type 7 (Abbreviation Lookup) questions.
     """
     headword = row['Headword']
     abbreviation = row.get('Abbreviation', '')
@@ -303,7 +303,7 @@ def generate_abbreviation_response(row: pd.Series) -> str:
 
 def generate_mechanism_response(row: pd.Series) -> str:
     """
-    Generate a response for Type 5 (Mechanism/Principle) questions.
+    Generate a response for Type 8 (Mechanism/Principle) questions.
     """
     headword = row['Headword']
     meaning = row.get('Meaning', '')
@@ -329,7 +329,7 @@ def generate_mechanism_response(row: pd.Series) -> str:
 
 def generate_extraction_context(row: pd.Series) -> str:
     """
-    Generate a messy context string for Type 8 (Information Extraction) questions.
+    Generate a messy context string for Type 9 (Information Extraction) questions.
     This simulates noisy/verbose input that the model needs to parse.
     """
     parts = []
@@ -376,7 +376,7 @@ def generate_extraction_context(row: pd.Series) -> str:
 
 def generate_extraction_response(row: pd.Series) -> str:
     """
-    Generate a response for Type 8 (Information Extraction) questions.
+    Generate a response for Type 9 (Information Extraction) questions.
     """
     headword = row['Headword']
     meaning = row.get('Meaning', '')
@@ -404,51 +404,51 @@ def generate_qa_pairs(row: pd.Series) -> List[Dict]:
     if not is_valid(meaning):
         return []
     
-    # Type 7: Open Explanation (always available)
+    # Type 1: Definition Query - Headword (always available)
     available_types.append({
-        'type': 7,
-        'templates': TYPE7_TEMPLATES,
+        'type': 1,
+        'templates': TYPE1_TEMPLATES,
         'response_fn': generate_full_response
     })
     
-    # Type 7 with Abbreviation
+    # Type 2: Definition Query - Abbreviation (requires Abbreviation)
     abbreviation = row.get('Abbreviation', '')
     if is_valid(abbreviation):
         available_types.append({
-            'type': '7_abbrev',
-            'templates': TYPE7_ABBREV_TEMPLATES,
+            'type': 2,
+            'templates': TYPE2_TEMPLATES,
             'response_fn': generate_full_response,
             'format_args': {'Abbreviation': abbreviation}
         })
     
-    # Type 7 with English term
+    # Type 3: Definition Query - English (requires Original_Word)
     original_word = row.get('Original_Word', '')
     if is_valid(original_word):
         # Only use if it's reasonably short
         if len(str(original_word)) < 50:
             available_types.append({
-                'type': '7_english',
-                'templates': TYPE7_ENGLISH_TEMPLATES,
+                'type': 3,
+                'templates': TYPE3_TEMPLATES,
                 'response_fn': generate_full_response,
                 'format_args': {'Original_Word': original_word}
             })
     
-    # Type 4: Category Membership
+    # Type 4: Classification (requires Hypernym)
     category = row.get('Category', '')
     hypernym = row.get('Hypernym', '')
-    if is_valid(category) or is_valid(hypernym):
+    if is_valid(hypernym):
         available_types.append({
             'type': 4,
             'templates': TYPE4_TEMPLATES,
-            'response_fn': generate_category_response
+            'response_fn': generate_classification_response
         })
     
-    # Type 2: Classification (only if Hypernym exists)
-    if is_valid(hypernym):
+    # Type 5: Category Membership (requires Category or Hypernym)
+    if is_valid(category) or is_valid(hypernym):
         available_types.append({
-            'type': 2,
-            'templates': TYPE2_TEMPLATES,
-            'response_fn': generate_classification_response
+            'type': 5,
+            'templates': TYPE5_TEMPLATES,
+            'response_fn': generate_category_response
         })
     
     # Type 6: Characteristics
@@ -458,28 +458,27 @@ def generate_qa_pairs(row: pd.Series) -> List[Dict]:
         'response_fn': generate_characteristics_response
     })
     
-    # Type 3: Reverse Abbreviation Lookup (only if Abbreviation exists)
+    # Type 7: Abbreviation Lookup (requires Abbreviation)
     if is_valid(abbreviation):
         available_types.append({
-            'type': 3,
-            'templates': TYPE3_TEMPLATES,
+            'type': 7,
+            'templates': TYPE7_TEMPLATES,
             'response_fn': generate_abbreviation_response,
             'format_args': {'Abbreviation': abbreviation}
         })
     
-    # Type 5: Mechanism/Principle (always available)
-    available_types.append({
-        'type': 5,
-        'templates': TYPE5_TEMPLATES,
-        'response_fn': generate_mechanism_response
-    })
-    
-    # Type 8: Information Extraction (always available)
-    # Generate context string for this type
-    context = generate_extraction_context(row)
+    # Type 8: Mechanism/Principle (always available)
     available_types.append({
         'type': 8,
         'templates': TYPE8_TEMPLATES,
+        'response_fn': generate_mechanism_response
+    })
+    
+    # Type 9: Information Extraction (always available)
+    context = generate_extraction_context(row)
+    available_types.append({
+        'type': 9,
+        'templates': TYPE9_TEMPLATES,
         'response_fn': generate_extraction_response,
         'format_args': {'context': context}
     })
