@@ -21,11 +21,11 @@ TARGET_MODULES = [
 ]
 
 # Training Configuration
-LEARNING_RATE = 1e-5
-NUM_EPOCHS = 1
-BATCH_SIZE = 1
-GRADIENT_ACCUMULATION_STEPS = 4
-WARMUP_STEPS = 50
+LEARNING_RATE = 2e-5
+NUM_EPOCHS = 3
+BATCH_SIZE = 32
+GRADIENT_ACCUMULATION_STEPS = 1
+WARMUP_STEPS = 100
 MAX_STEPS = None
 
 # QAT Configuration (disabled - using QLoRA instead per assignment requirements)

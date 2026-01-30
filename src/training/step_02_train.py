@@ -191,7 +191,7 @@ def main():
     save_steps_value = 500
     if eval_dataset is not None:
         steps_per_epoch = len(train_dataset) // (args.batch_size * args.grad_accum)
-        eval_steps_value = max(1, steps_per_epoch // 10)  # Ensure at least 1
+        eval_steps_value = max(1, steps_per_epoch // 5)  # Eval 5x per epoch
         save_steps_value = eval_steps_value * 10  # Save once per epoch (must be multiple of eval_steps)
         print(f"  Steps per epoch: {steps_per_epoch}")
         print(f"  Eval steps (10x per epoch): {eval_steps_value}")
