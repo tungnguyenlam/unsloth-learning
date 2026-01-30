@@ -217,47 +217,26 @@ def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokeniz
     ground_truths = [d["answer"] for d in test_data]
     subjects = [d["subject"] for d in test_data]
     
-    print(f"\nEvaluating fine-tuned model (single processing)...")
-    ft_predictions = []
-    ft_responses = []
+    # Use batch processing
+    from batch_utils import batch_generate
     
-    # Process one at a time to avoid padding issues
-    for i, question in enumerate(tqdm(questions, desc="Fine-tuned")):
-        # Prepare message in Gemma-3 multimodal format
-        messages = [{
-            "role": "user",
-            "content": [{"type": "text", "text": question}]
-        }]
-        
-        # Tokenize single input (no padding needed)
-        inputs = finetuned_tokenizer.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_tensors="pt",
-            return_dict=True
-        ).to(finetuned_model.device)
-        
-        input_len = inputs["input_ids"].shape[1]
-        
-        # Generate
-        outputs = finetuned_model.generate(
-            **inputs,
-            max_new_tokens=16,
-            do_sample=False,
-            pad_token_id=finetuned_tokenizer.eos_token_id
-        )
-        
-        # Decode - slice from input length to get only generated tokens
-        generated_tokens = outputs[0][input_len:]
-        resp = finetuned_tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
-        ft_responses.append(resp)
+    print(f"\nEvaluating fine-tuned model (batch_size={batch_size})...")
+    ft_responses = batch_generate(
+        finetuned_model, finetuned_tokenizer, questions,
+        max_new_tokens=16,
+        batch_size=batch_size,
+        desc="MCQ Eval"
+    )
+    
+    # Extract answers
+    ft_predictions = []
+    for resp in ft_responses:
         ans = extract_answer(resp)
         ft_predictions.append(ans if ans is not None else -1)
-        
-        # Debug: print first few
-        if i < 2:
-            print(f"    Sample {i}: Response='{resp[:50]}...' -> Pred={ans}")
+    
+    # Debug: print first few
+    for i in range(min(2, len(ft_responses))):
+        print(f"    Sample {i}: Response='{ft_responses[i][:50]}' -> Pred={ft_predictions[i]}")
     
     ft_accuracy = compute_accuracy(ft_predictions, ground_truths)
     ft_by_subject = compute_accuracy_by_subject(ft_predictions, ground_truths, subjects)
@@ -274,39 +253,17 @@ def run_test(finetuned_model, finetuned_tokenizer, base_model=None, base_tokeniz
     }
     
     if base_model is not None:
-        print(f"\nEvaluating base model (single processing)...")
-        base_predictions = []
+        print(f"\nEvaluating base model (batch_size={batch_size})...")
+        base_responses = batch_generate(
+            base_model, base_tokenizer, questions,
+            max_new_tokens=16,
+            batch_size=batch_size,
+            desc="Base MCQ"
+        )
         
-        # Process one at a time to avoid padding issues
-        for i, question in enumerate(tqdm(questions, desc="Base model")):
-            # Prepare message in Gemma-3 multimodal format
-            messages = [{
-                "role": "user",
-                "content": [{"type": "text", "text": question}]
-            }]
-            
-            # Tokenize single input (no padding needed)
-            inputs = base_tokenizer.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                tokenize=True,
-                return_tensors="pt",
-                return_dict=True
-            ).to(base_model.device)
-            
-            input_len = inputs["input_ids"].shape[1]
-            
-            # Generate
-            outputs = base_model.generate(
-                **inputs,
-                max_new_tokens=16,
-                do_sample=False,
-                pad_token_id=base_tokenizer.eos_token_id
-            )
-            
-            # Decode - slice from input length to get only generated tokens
-            generated_tokens = outputs[0][input_len:]
-            resp = base_tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+        # Extract answers
+        base_predictions = []
+        for resp in base_responses:
             ans = extract_answer(resp)
             base_predictions.append(ans if ans is not None else -1)
         

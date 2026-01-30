@@ -257,13 +257,7 @@ def main():
         from torchao.quantization.qat import QATConfig
         quantize_(model, QATConfig(step="convert"))
     
-    # Step 6: Save
-    print(f"\n[6/6] Saving LoRA adapters to {LORA_MODEL_DIR}...")
-    os.makedirs(LORA_MODEL_DIR, exist_ok=True)
-    model.save_pretrained(LORA_MODEL_DIR)
-    tokenizer.save_pretrained(LORA_MODEL_DIR)
-    
-    # Save training config for later steps
+    # Generate run name for saving
     run_name = get_wandb_run_name(
         learning_rate=args.learning_rate,
         epochs=args.epochs,
@@ -273,6 +267,42 @@ def main():
         lora_alpha=LORA_ALPHA,
         target_modules=TARGET_MODULES,
     )
+    
+    # Step 6: Save LoRA locally
+    print(f"\n[6/8] Saving LoRA adapters to {LORA_MODEL_DIR}...")
+    os.makedirs(LORA_MODEL_DIR, exist_ok=True)
+    model.save_pretrained(LORA_MODEL_DIR)
+    tokenizer.save_pretrained(LORA_MODEL_DIR)
+    
+    # Step 7: Merge and push to HuggingFace
+    print(f"\n[7/8] Merging LoRA and pushing to HuggingFace...")
+    hf_token = args.hf_token
+    hf_username = args.hf_username
+    
+    if not hf_token:
+        print("  WARNING: No HF token provided. Skipping push.")
+        print("  Use --hf-token to provide token, or set HF_TOKEN env var")
+    else:
+        from step_00_config import HF_MODEL_BASE_NAME
+        hf_model_name = f"{hf_username}/{HF_MODEL_BASE_NAME}-{run_name}"
+        print(f"  Pushing to: {hf_model_name}")
+        
+        # Merge and push in 16-bit
+        model.push_to_hub_merged(
+            hf_model_name,
+            tokenizer,
+            save_method="merged_16bit",
+            token=hf_token,
+        )
+        print(f"  ✅ Pushed to HuggingFace: {hf_model_name}")
+        
+        # Save HF model name to config for later steps
+        training_config = load_detected_config()
+        training_config["hf_model_name"] = hf_model_name
+        save_detected_config(training_config)
+    
+    # Step 8: Save training config
+    print(f"\n[8/8] Saving training config...")
     training_config = load_detected_config()
     training_config.update({
         "run_name": run_name,
@@ -293,9 +323,12 @@ def main():
     print("STEP 02 COMPLETE")
     print("=" * 60)
     print(f"\nRun name: {run_name}")
-    print(f"Saved: {LORA_MODEL_DIR}/")
+    print(f"LoRA saved: {LORA_MODEL_DIR}/")
+    if hf_token:
+        print(f"HuggingFace: {hf_model_name}")
     print("\nNext: python src/training/step_03_test_fp16.py")
 
 
 if __name__ == "__main__":
     main()
+

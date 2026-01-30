@@ -108,6 +108,27 @@ def main():
          
     print(f"  Saved and organized in: {GGUF_MODEL_DIR}/")
     
+    # Step 3: Push GGUF to HuggingFace
+    hf_token = args.hf_token
+    hf_username = args.hf_username
+    
+    if hf_token:
+        print(f"\n[3/3] Pushing GGUF to HuggingFace...")
+        from step_00_config import HF_MODEL_BASE_NAME
+        hf_gguf_name = f"{hf_username}/{HF_MODEL_BASE_NAME}-{run_name}-GGUF"
+        print(f"  Pushing to: {hf_gguf_name}")
+        
+        # Push GGUF with Unsloth's method
+        model.push_to_hub_gguf(
+            hf_gguf_name,
+            tokenizer,
+            quantization_method=args.quantization,
+            token=hf_token,
+        )
+        print(f"  ✅ Pushed GGUF to: {hf_gguf_name}")
+    else:
+        print(f"\n[3/3] Skipping HuggingFace push (no --hf-token provided)")
+    
     # Print Ollama instructions
     print("\n" + "-" * 40)
     print("OLLAMA SETUP INSTRUCTIONS")
@@ -120,8 +141,11 @@ def main():
     print("STEP 04 COMPLETE")
     print("=" * 60)
     print(f"\nGGUF model: {GGUF_MODEL_DIR}/")
+    if hf_token:
+        print(f"HuggingFace GGUF: {hf_gguf_name}")
     print("\nNext: python src/training/step_05_test_gguf.py")
 
 
 if __name__ == "__main__":
     main()
+

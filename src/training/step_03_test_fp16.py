@@ -2,8 +2,8 @@
 Step 03: Test FP16 Model
 
 PURPOSE:
-    Test the fine-tuned LoRA model before quantization (GGUF export).
-    Validates that the model learned the military vocabulary correctly.
+    Test the fine-tuned model after training.
+    Downloads from HuggingFace and uses standard transformers for reliable batch inference.
 
 TESTS RUN:
     1. Test 1: Knowledge Recall
@@ -16,11 +16,11 @@ TESTS RUN:
        - Metrics: Accuracy (>= 0.30)
 
 USAGE:
-    # Test local LoRA model (default)
+    # Test the model pushed in step_02 (reads from config)
     python src/training/step_03_test_fp16.py
     
-    # Test a HuggingFace model directly
-    python src/training/step_03_test_fp16.py --hf-model google/gemma-3-4b-it
+    # Test a specific HuggingFace model
+    python src/training/step_03_test_fp16.py --hf-model mainguyenngoc/gemma3-4b-military-lr2e4_ep1_bs16x4_r64_a128_m7
     
     # Skip specific tests
     python src/training/step_03_test_fp16.py --skip-test1 --skip-test2
@@ -33,6 +33,7 @@ Run from project root: python src/training/step_03_test_fp16.py
 
 import os
 import sys
+import torch
 
 # Allow running from project root
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,10 +46,9 @@ if TESTING_DIR not in sys.path:
     sys.path.insert(0, TESTING_DIR)
 
 from step_00_config import (
-    MODEL_NAME, LOAD_IN_4BIT,
-    LORA_MODEL_DIR, TEST1_DATA_PATH,
+    TEST1_DATA_PATH,
     ensure_dirs, get_base_parser, get_max_seq_length, get_saved_run_name,
-    get_results_dir_for_run
+    get_results_dir_for_run, load_detected_config
 )
 
 
@@ -58,62 +58,61 @@ def main():
     parser.add_argument("--skip-test2", action="store_true", help="Skip Test 2 (Stability Check)")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size for inference (default: 16)")
     parser.add_argument("--hf-model", type=str, default=None, 
-                       help="HuggingFace model name to test instead of local LoRA model (e.g., 'google/gemma-3-4b-it')")
+                       help="HuggingFace model name to test (default: reads from config)")
     args = parser.parse_args()
     
-    max_seq_length = get_max_seq_length()
     run_name = get_saved_run_name()
     
     print("=" * 60)
     print("STEP 03: TEST FP16 MODEL")
     print("=" * 60)
     print(f"\nRun Name: {run_name}")
-    print(f"Max Seq Length: {max_seq_length}")
     print(f"Batch Size: {args.batch_size}")
     
     ensure_dirs()
     
-    # Get run-specific results directory
-    results_dir = get_results_dir_for_run(run_name)
-    print(f"Results Dir: {results_dir}")
-    
     # Determine which model to load
     if args.hf_model:
-        # Load HuggingFace model directly
-        print(f"\n[1/3] Loading HuggingFace model: {args.hf_model}...")
-        from transformers import AutoTokenizer, AutoModelForCausalLM
-        import torch
-        
-        tokenizer = AutoTokenizer.from_pretrained(args.hf_model, trust_remote_code=True)
-        model = AutoModelForCausalLM.from_pretrained(
-            args.hf_model,
-            torch_dtype=torch.float16,
-            device_map="auto",
-            trust_remote_code=True
-        )
-        # Update run_name to reflect the HF model
-        hf_model_short = args.hf_model.split("/")[-1]
-        run_name = f"hf_{hf_model_short}"
-        results_dir = get_results_dir_for_run(run_name)
-        print(f"  Model loaded successfully")
-        print(f"  Updated run_name: {run_name}")
+        hf_model_name = args.hf_model
     else:
-        # Load local LoRA model
-        if not os.path.exists(LORA_MODEL_DIR):
-            print(f"ERROR: LoRA model not found at: {LORA_MODEL_DIR}")
-            print("Run src/training/step_02_train.py first, or use --hf-model to test a HuggingFace model")
+        # Try to read from config (set by step_02)
+        config = load_detected_config()
+        hf_model_name = config.get("hf_model_name")
+        
+        if not hf_model_name:
+            print("ERROR: No HuggingFace model found in config.")
+            print("Either:")
+            print("  1. Run step_02_train.py with --hf-token to push model first")
+            print("  2. Use --hf-model to specify a HuggingFace model directly")
             sys.exit(1)
-        
-        print("\n[1/3] Loading trained LoRA model...")
-        from unsloth import FastModel, FastLanguageModel
-        
-        model, tokenizer = FastModel.from_pretrained(
-            model_name=LORA_MODEL_DIR,
-            max_seq_length=max_seq_length,
-            load_in_4bit=LOAD_IN_4BIT,
-        )
-        FastLanguageModel.for_inference(model)
-        print("  Model loaded successfully")
+    
+    # Update run_name to reflect the HF model
+    hf_model_short = hf_model_name.split("/")[-1]
+    run_name = f"hf_{hf_model_short}"
+    results_dir = get_results_dir_for_run(run_name)
+    
+    print(f"HuggingFace Model: {hf_model_name}")
+    print(f"Results Dir: {results_dir}")
+    
+    # Load model from HuggingFace with standard transformers
+    print(f"\n[1/3] Loading model from HuggingFace...")
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+    
+    tokenizer = AutoTokenizer.from_pretrained(hf_model_name, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(
+        hf_model_name,
+        torch_dtype=torch.float16,
+        device_map="auto",
+        trust_remote_code=True
+    )
+    
+    # Set up tokenizer for batch processing
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"  # Required for batch generation
+    
+    print(f"  Model loaded successfully")
+    print(f"  Device: {next(model.parameters()).device}")
     
     # Test 1: Knowledge Recall
     if not args.skip_test1:
