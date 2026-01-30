@@ -4,10 +4,13 @@ Step 05: Test GGUF Model & Compare
 PURPOSE:
     Test the quantized GGUF model and compare its performance against the
     FP16 model to measure quantization loss.
+    
+    Uses transformers' native GGUF loading for GPU acceleration on NVIDIA GPUs.
+    This approach works on both Mac (MPS) and Linux (CUDA) without special compilation.
 
 TESTS RUN:
     1. Test 1: Knowledge Recall (GGUF)
-       - Same as FP16 test but using GGUF model via llama-cpp-python
+       - Same as FP16 test but using GGUF model via transformers
        - Verifies vocabulary knowledge survives quantization
     
     2. Test 2: Stability Check (GGUF)
@@ -19,19 +22,22 @@ TESTS RUN:
        - Measures quantization loss (acceptable: <5% drop)
 
 REQUIREMENTS:
-    - llama-cpp-python installed (pip install llama-cpp-python)
-    - GGUF model exported via step_04_export_gguf.py
+    - transformers >= 4.45.0 (native GGUF support)
+    - GGUF model exported via step_04_export_gguf.py or on HuggingFace
     - FP16 test results from step_03_test_fp16.py (for comparison)
 
 USAGE:
-    # Test auto-selected GGUF model
-    python src/training/step_05_test_gguf.py
+    # Test from HuggingFace GGUF repo
+    python src/training/step_05_test_gguf.py --hf-model mainguyenngoc/model-GGUF
     
-    # Specify a specific GGUF file
+    # Specify a specific GGUF file in the repo
+    python src/training/step_05_test_gguf.py --hf-model user/repo-GGUF --hf-file model.Q4_K_M.gguf
+    
+    # Test a local GGUF file
     python src/training/step_05_test_gguf.py --model path/to/model.gguf
     
     # Skip specific tests
-    python src/training/step_05_test_gguf.py --skip-test1 --skip-test3
+    python src/training/step_05_test_gguf.py --hf-model user/repo-GGUF --skip-test1 --skip-test3
 
 Run from project root: python src/training/step_05_test_gguf.py
 """
@@ -39,6 +45,7 @@ Run from project root: python src/training/step_05_test_gguf.py
 import os
 import sys
 import json
+import torch
 
 # Allow running from project root
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -57,56 +64,98 @@ from step_00_config import (
 )
 
 
-class GGUFModelWrapper:
-    def __init__(self, model_path: str, n_ctx: int = 2048):
+def load_gguf_model_transformers(hf_repo: str = None, gguf_file: str = None, local_path: str = None):
+    """
+    Load GGUF model using transformers' native GGUF support.
+    
+    This works on CUDA GPUs without special llama-cpp-python compilation.
+    The model is de-quantized to FP16/BF16 for inference.
+    
+    Args:
+        hf_repo: HuggingFace repo containing GGUF files (e.g., "user/model-GGUF")
+        gguf_file: Specific GGUF filename in the repo (optional, auto-detected if not set)
+        local_path: Local path to GGUF file (alternative to hf_repo)
+    
+    Returns:
+        (model, tokenizer) tuple
+    """
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from huggingface_hub import list_repo_files, hf_hub_download
+    
+    if local_path:
+        # Local GGUF file - need to determine base model for tokenizer
+        print(f"  Loading local GGUF: {local_path}")
+        # For local files, we need the base model name for tokenizer
+        # Try to infer from filename or use a default
+        model = AutoModelForCausalLM.from_pretrained(
+            local_path,
+            device_map="auto",
+            torch_dtype=torch.float16,
+        )
+        # For local GGUF, tokenizer loading is tricky - need base model
+        # This is a limitation - user should prefer HF repos
+        tokenizer = None
+        print("  WARNING: Local GGUF requires manual tokenizer setup")
+        return model, tokenizer
+    
+    if not hf_repo:
+        raise ValueError("Either hf_repo or local_path must be provided")
+    
+    print(f"  Loading from HuggingFace: {hf_repo}")
+    
+    # Find GGUF file if not specified
+    if not gguf_file:
+        print("  Finding GGUF file in repo...")
+        files = list_repo_files(hf_repo)
+        ggufs = [f for f in files if f.endswith(".gguf") and "mmproj" not in f]
+        
+        if not ggufs:
+            raise ValueError(f"No GGUF files found in {hf_repo}")
+        
+        # Prefer Q4_K_M, then Q8_0, then first available
+        gguf_file = next((f for f in ggufs if "q4_k_m" in f.lower()), None)
+        if not gguf_file:
+            gguf_file = next((f for f in ggufs if "q8_0" in f.lower()), ggufs[0])
+        
+        print(f"  Auto-selected: {gguf_file}")
+    
+    print(f"  GGUF file: {gguf_file}")
+    
+    # Load model with native GGUF support
+    print("  Loading model (this may take a moment for de-quantization)...")
+    model = AutoModelForCausalLM.from_pretrained(
+        hf_repo,
+        gguf_file=gguf_file,
+        device_map="auto",
+        torch_dtype=torch.float16,
+    )
+    
+    # Load tokenizer from the same repo
+    # GGUF repos usually have tokenizer files, or we fall back to base model
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(hf_repo, trust_remote_code=True)
+    except Exception as e:
+        print(f"  Tokenizer not in GGUF repo, trying base model...")
+        # Infer base model from repo name (remove -GGUF suffix)
+        base_model_hint = hf_repo.replace("-GGUF", "")
         try:
-            from llama_cpp import Llama
-        except ImportError:
-            print("\nERROR: llama-cpp-python not installed.")
-            print("Please run: pip install llama-cpp-python")
-            sys.exit(1)
-            
-        self.llm = Llama(
-            model_path=model_path,
-            n_ctx=n_ctx,
-            n_gpu_layers=-1,
-            verbose=False,
-        )
-        self.device = "cuda"
+            tokenizer = AutoTokenizer.from_pretrained(base_model_hint, trust_remote_code=True)
+        except Exception:
+            # Fall back to gemma-2 tokenizer as default
+            print("  Falling back to google/gemma-2-2b tokenizer")
+            tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-2b", trust_remote_code=True)
     
-    def generate_text(self, prompt: str, max_new_tokens: int = 256) -> str:
-        output = self.llm(
-            prompt,
-            max_tokens=max_new_tokens,
-            temperature=0.0,
-            stop=["<end_of_turn>", "<eos>"],
-        )
-        return output["choices"][0]["text"].strip()
-
-
-class GGUFTokenizerWrapper:
-    def __init__(self):
-        self.eos_token_id = 1
+    # Configure tokenizer for batch processing
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"  # Required for batch generation
     
-    def apply_chat_template(self, messages, add_generation_prompt=True, tokenize=False, return_tensors=None, return_dict=False):
-        text = ""
-        for msg in messages:
-            role = msg["role"]
-            content = msg["content"]
-            if role == "user":
-                text += f"<start_of_turn>user\n{content}<end_of_turn>\n"
-            elif role == "assistant":
-                text += f"<start_of_turn>model\n{content}<end_of_turn>\n"
-        
-        if add_generation_prompt:
-            text += "<start_of_turn>model\n"
-        
-        if tokenize:
-            return {"input_ids": None, "prompt": text}
-        return text
+    return model, tokenizer
 
 
-def run_test1_gguf(model, tokenizer, test_data_path: str, output_path: str, run_name: str = None, max_samples: int = 50) -> dict:
+def run_test1_gguf(model, tokenizer, test_data_path: str, output_path: str, 
+                   run_name: str = None, batch_size: int = 8, max_samples: int = 50) -> dict:
+    """Run Test 1: Knowledge Recall using batch inference."""
     from tqdm import tqdm
     from datetime import datetime
     import test1_knowledge_recall as test1
@@ -117,26 +166,57 @@ def run_test1_gguf(model, tokenizer, test_data_path: str, output_path: str, run_
         for line in f:
             data.append(json.loads(line.strip()))
     
-    # Limit samples for quick GGUF testing
+    # Limit samples
     if max_samples and max_samples < len(data):
         import random
         random.seed(42)
         data = random.sample(data, max_samples)
-        print(f"Using {max_samples} samples (quick mode)")
+        print(f"Using {max_samples} samples")
     
-    print(f"Running inference on {len(data)} samples...")
-    predictions = []
+    print(f"Running batch inference on {len(data)} samples (batch_size={batch_size})...")
+    
     questions = [d["question"] for d in data]
     ground_truths = [d["ground_truth"] for d in data]
     
-    for item in tqdm(data, desc="GGUF Inference"):
-        prompt = tokenizer.apply_chat_template(
-            [{"role": "user", "content": item["question"]}],
-            add_generation_prompt=True,
-            tokenize=False,
-        )
-        pred = model.generate_text(prompt, max_new_tokens=256)
-        predictions.append(pred)
+    # Batch inference
+    predictions = []
+    for i in tqdm(range(0, len(questions), batch_size), desc="GGUF Inference"):
+        batch_questions = questions[i:i+batch_size]
+        
+        # Format prompts
+        prompts = []
+        for q in batch_questions:
+            messages = [{"role": "user", "content": q}]
+            prompt = tokenizer.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False
+            )
+            prompts.append(prompt)
+        
+        # Tokenize batch
+        inputs = tokenizer(
+            prompts, 
+            return_tensors="pt", 
+            padding=True, 
+            truncation=True,
+            max_length=2048
+        ).to(model.device)
+        
+        # Generate
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=256,
+                do_sample=False,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+            )
+        
+        # Decode only new tokens
+        for j, output in enumerate(outputs):
+            input_len = inputs.input_ids[j].shape[0]
+            new_tokens = output[input_len:]
+            pred = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+            predictions.append(pred)
     
     print("Computing metrics...")
     bertscore = test1.compute_bertscore(predictions, ground_truths)
@@ -165,7 +245,9 @@ def run_test1_gguf(model, tokenizer, test_data_path: str, output_path: str, run_
     return results
 
 
-def run_test2_gguf(model, tokenizer, output_path: str, run_name: str = None, max_samples: int = 50) -> dict:
+def run_test2_gguf(model, tokenizer, output_path: str, run_name: str = None, 
+                   batch_size: int = 8, max_samples: int = 50) -> dict:
+    """Run Test 2: Stability Check (KoMMLU) using batch inference."""
     from tqdm import tqdm
     from datetime import datetime
     import test2_stability_check as test2
@@ -173,34 +255,66 @@ def run_test2_gguf(model, tokenizer, output_path: str, run_name: str = None, max
     print("Loading KoMMLU data...")
     test_data = test2.load_kommlu_data()
     
-    # Limit samples for quick GGUF testing
+    # Limit samples
     if max_samples and max_samples < len(test_data):
         import random
         random.seed(42)
         test_data = random.sample(test_data, max_samples)
-        print(f"Using {max_samples} samples (quick mode)")
+        print(f"Using {max_samples} samples")
     
     questions = [test2.format_mcq_prompt(d["question"], d["choices"]) for d in test_data]
     ground_truths = [d["answer"] for d in test_data]
     subjects = [d["subject"] for d in test_data]
     
-    print(f"Running inference on {len(questions)} samples...")
+    print(f"Running batch inference on {len(questions)} samples (batch_size={batch_size})...")
+    
     predictions = []
     responses = []
     
-    for i, q in enumerate(tqdm(questions, desc="GGUF KoMMLU")):
-        prompt = tokenizer.apply_chat_template(
-            [{"role": "user", "content": q}],
-            add_generation_prompt=True,
-            tokenize=False,
-        )
-        resp = model.generate_text(prompt, max_new_tokens=16)
-        responses.append(resp)
-        answer = test2.extract_answer(resp) if test2.extract_answer(resp) is not None else -1
-        predictions.append(answer)
-        # Debug: print first 3 responses
-        if i < 3:
-            print(f"  Sample {i}: Response='{resp[:50]}...' -> Pred={answer}")
+    for i in tqdm(range(0, len(questions), batch_size), desc="GGUF KoMMLU"):
+        batch_questions = questions[i:i+batch_size]
+        
+        # Format prompts
+        prompts = []
+        for q in batch_questions:
+            messages = [{"role": "user", "content": q}]
+            prompt = tokenizer.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=False
+            )
+            prompts.append(prompt)
+        
+        # Tokenize batch
+        inputs = tokenizer(
+            prompts, 
+            return_tensors="pt", 
+            padding=True, 
+            truncation=True,
+            max_length=2048
+        ).to(model.device)
+        
+        # Generate
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=16,
+                do_sample=False,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+            )
+        
+        # Decode only new tokens
+        for j, output in enumerate(outputs):
+            input_len = inputs.input_ids[j].shape[0]
+            new_tokens = output[input_len:]
+            resp = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+            responses.append(resp)
+            
+            answer = test2.extract_answer(resp)
+            predictions.append(answer if answer is not None else -1)
+            
+            # Debug: print first 3 responses
+            if i + j < 3:
+                print(f"  Sample {i+j}: Response='{resp[:50]}...' -> Pred={predictions[-1]}")
     
     accuracy = test2.compute_accuracy(predictions, ground_truths)
     by_subject = test2.compute_accuracy_by_subject(predictions, ground_truths, subjects)
@@ -240,12 +354,12 @@ def main():
     parser.add_argument("--skip-test1", action="store_true")
     parser.add_argument("--skip-test2", action="store_true")
     parser.add_argument("--skip-test3", action="store_true")
-    parser.add_argument("--batch-size", type=int, default=1, help="Batch size (ignored for GGUF inference)")
+    parser.add_argument("--batch-size", type=int, default=8, help="Batch size for inference (default: 8)")
     parser.add_argument("--hf-model", type=str, default=None, 
                        help="HuggingFace GGUF model repo (e.g. username/repo-GGUF). Will download automatically.")
     parser.add_argument("--hf-file", type=str, default=None, 
-                       help="Specific GGUF filename in HF repo. If not set, picks first .gguf found.")
-    parser.add_argument("--model", type=str, default=None, help="Explicitly specify GGUF model file path")
+                       help="Specific GGUF filename in HF repo. If not set, picks Q4_K_M or first .gguf found.")
+    parser.add_argument("--model", type=str, default=None, help="Explicitly specify local GGUF model file path")
     parser.add_argument("--quick", action="store_true", help="Quick test with only 50 samples per test (default for GGUF)")
     parser.add_argument("--max-samples", type=int, default=50, help="Max samples per test (default: 50)")
     
@@ -265,113 +379,48 @@ def main():
     max_samples = args.max_samples
     
     print("=" * 60)
-    print("STEP 05: TEST GGUF MODEL")
+    print("STEP 05: TEST GGUF MODEL (Transformers Backend)")
     print("=" * 60)
     print(f"\nRun Name: {run_name}")
     print(f"Max Seq Length: {max_seq_length}")
-    print(f"Max Samples: {max_samples} (GGUF quick mode)")
+    print(f"Max Samples: {max_samples}")
+    print(f"Batch Size: {args.batch_size}")
     
-    # Logic for model selection
-    gguf_path = None
-    
-    # Case 1: HuggingFace Download
-    if args.hf_model:
-        print(f"\n[Model Selection] Downloading from HuggingFace: {args.hf_model}")
-        from huggingface_hub import hf_hub_download, list_repo_files
-        
-        repo_id = args.hf_model
-        
-        # If specific file requested
-        if args.hf_file:
-            target_file = args.hf_file
-            print(f"  Target file: {target_file}")
-        else:
-            # List files to find a GGUF
-            print("  Finding GGUF file in repo...")
-            files = list_repo_files(repo_id)
-            ggufs = [f for f in files if f.endswith(".gguf") and "mmproj" not in f]
-            
-            if not ggufs:
-                print(f"ERROR: No GGUF files found in {repo_id}")
-                sys.exit(1)
-            
-            # Simple heuristic: pick valid Q4_K_M if exists, else first one
-            target_file = next((f for f in ggufs if "q4_k_m" in f.lower()), ggufs[0])
-            print(f"  Auto-selected file: {target_file}")
-            
-        # Download
-        gguf_path = hf_hub_download(repo_id=repo_id, filename=target_file)
-        print(f"  Downloaded to: {gguf_path}")
-
-    # Case 2: Explicit Local Path
-    elif args.model:
-        if not os.path.exists(args.model):
-            print(f"ERROR: Specified model file not found: {args.model}")
-            sys.exit(1)
-        gguf_path = args.model
-        print(f"\nUsing specified GGUF model: {gguf_path}")
-        
-    # Case 3: Auto-discovery
-    else:
-        # 2. Search for models
+    # Validate arguments
+    if not args.hf_model and not args.model:
+        # Try auto-discovery from local GGUF_MODEL_DIR
         if os.path.exists(GGUF_MODEL_DIR):
-            print(f"Checking directory: {GGUF_MODEL_DIR}")
-            print(f"Contents: {os.listdir(GGUF_MODEL_DIR)}")
-            gguf_files = [os.path.join(GGUF_MODEL_DIR, f) for f in os.listdir(GGUF_MODEL_DIR) if f.endswith('.gguf')]
-        else:
-            print(f"Directory not found: {GGUF_MODEL_DIR}")
-            gguf_files = []
-
-        # Fallback: Check current directory
-        if not gguf_files:
-            print("Checking current directory for GGUF files...")
-            current_dir_files = [f for f in os.listdir('.') if f.endswith('.gguf')]
-            gguf_files = current_dir_files
+            gguf_files = [f for f in os.listdir(GGUF_MODEL_DIR) if f.endswith('.gguf') and 'mmproj' not in f]
             if gguf_files:
-                print(f"Found GGUF file(s) in current directory: {gguf_files}")
-
-        if not gguf_files:
-            print(f"ERROR: No GGUF files found in: {GGUF_MODEL_DIR} or current directory")
-            print("Run src/training/step_04_export_gguf.py first")
+                # Sort by modification time (newest first)
+                gguf_files.sort(key=lambda x: os.path.getmtime(os.path.join(GGUF_MODEL_DIR, x)), reverse=True)
+                args.model = os.path.join(GGUF_MODEL_DIR, gguf_files[0])
+                print(f"\nAuto-selected local GGUF: {args.model}")
+        
+        if not args.model:
+            print("\nERROR: No model specified.")
+            print("Use --hf-model <repo> for HuggingFace GGUF repos")
+            print("Or --model <path> for local GGUF files")
             sys.exit(1)
-        
-        # Filter out mmproj files (multimodal projectors)
-        valid_gguf_files = [f for f in gguf_files if "mmproj" not in f]
-        
-        if not valid_gguf_files:
-            print(f"ERROR: Only mmproj files found: {gguf_files}")
-            print("The main model GGUF seems to be missing.")
-            sys.exit(1)
-            
-        print(f"\nFound {len(valid_gguf_files)} candidate models: {valid_gguf_files}")
-        
-        # Selection Logic:
-        # 1. Prefer file containing run_name
-        # 2. Prefer newest file (by modification time)
-        
-        # Sort by modification time (newest first)
-        valid_gguf_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-        
-        selected_gguf = valid_gguf_files[0]
-        match_source = "newest modified"
-        
-        # Check for run_name match
-        for f in valid_gguf_files:
-            if run_name in f:
-                selected_gguf = f
-                match_source = f"matches run_name '{run_name}'"
-                break
-                
-        gguf_path = selected_gguf
-        print(f"Auto-selected model ({match_source}): {gguf_path}")
-        if len(valid_gguf_files) > 1:
-            print("  (Use --model <path> to specify a different one)")
     
-    # Load Model
-    print("\n[1/4] Loading GGUF model...")
-    model = GGUFModelWrapper(gguf_path, n_ctx=max_seq_length)
-    tokenizer = GGUFTokenizerWrapper()
-    print("  Model loaded successfully")
+    # Load Model using transformers native GGUF support
+    print("\n[1/4] Loading GGUF model via transformers...")
+    
+    if args.hf_model:
+        model, tokenizer = load_gguf_model_transformers(
+            hf_repo=args.hf_model,
+            gguf_file=args.hf_file
+        )
+    else:
+        model, tokenizer = load_gguf_model_transformers(local_path=args.model)
+        if tokenizer is None:
+            print("ERROR: Local GGUF files require manual tokenizer setup.")
+            print("Please use --hf-model with a HuggingFace repo instead.")
+            sys.exit(1)
+    
+    device = next(model.parameters()).device
+    print(f"  Model loaded successfully")
+    print(f"  Device: {device}")
     
     # Get run-specific results directory
     results_dir = get_results_dir_for_run(run_name)
@@ -386,7 +435,12 @@ def main():
             print(f"  WARNING: Test data not found: {TEST1_DATA_PATH}")
         else:
             test1_output = os.path.join(results_dir, f"gguf_test1_{run_name}.json")
-            gguf_test1_results = run_test1_gguf(model, tokenizer, TEST1_DATA_PATH, test1_output, run_name=f"gguf_{run_name}", max_samples=max_samples)
+            gguf_test1_results = run_test1_gguf(
+                model, tokenizer, TEST1_DATA_PATH, test1_output, 
+                run_name=f"gguf_{run_name}", 
+                batch_size=args.batch_size,
+                max_samples=max_samples
+            )
     else:
         print("\n[2/4] Skipping Test 1")
     
@@ -394,7 +448,12 @@ def main():
     if not args.skip_test2:
         print("\n[3/4] Running Test 2: Stability Check (KoMMLU)...")
         test2_output = os.path.join(results_dir, f"gguf_test2_{run_name}.json")
-        gguf_test2_results = run_test2_gguf(model, tokenizer, test2_output, run_name=f"gguf_{run_name}", max_samples=max_samples)
+        gguf_test2_results = run_test2_gguf(
+            model, tokenizer, test2_output, 
+            run_name=f"gguf_{run_name}", 
+            batch_size=args.batch_size,
+            max_samples=max_samples
+        )
     else:
         print("\n[3/4] Skipping Test 2")
     
