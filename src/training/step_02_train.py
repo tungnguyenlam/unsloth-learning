@@ -71,7 +71,11 @@ def main():
     parser.add_argument("--wandb-run-name", type=str, default=None, help="Override auto-generated wandb run name")
     parser.add_argument("--eval-split", type=float, default=EVAL_SPLIT)
     parser.add_argument("--no-grad-ckpt", action="store_true", help="Disable gradient checkpointing for faster training (uses more VRAM)")
+    parser.add_argument("--model-name", type=str, default=None, help="Override base model name (e.g., unsloth/gemma-3-270m-it)")
     args = parser.parse_args()
+    
+    # Determine base model: CLI override > Config default
+    model_name = args.model_name or MODEL_NAME
     
     # Determine QAT usage: CLI override > Config default
     if args.qat:
@@ -98,7 +102,7 @@ def main():
         sys.exit(1)
     
     print(f"\nConfiguration:")
-    print(f"  Model:          {MODEL_NAME}")
+    print(f"  Model:          {model_name}")
     print(f"  Max Seq Length: {max_seq_length} (auto-detected)")
     print(f"  Epochs:         {args.epochs}")
     print(f"  Learning Rate:  {args.learning_rate}")
@@ -112,7 +116,7 @@ def main():
     from unsloth import FastModel, FastLanguageModel
     
     model, tokenizer = FastModel.from_pretrained(
-        model_name=MODEL_NAME,
+        model_name=model_name,
         max_seq_length=max_seq_length,
         load_in_4bit=LOAD_IN_4BIT,
         load_in_8bit=False,
@@ -171,7 +175,7 @@ def main():
             project=WANDB_PROJECT,
             name=run_name,
             config={
-                "model_name": MODEL_NAME,
+                "model_name": model_name,
                 "max_seq_length": max_seq_length,
                 "lora_r": LORA_R,
                 "lora_alpha": LORA_ALPHA,
@@ -283,8 +287,9 @@ def main():
         print("  WARNING: No HF token provided. Skipping push.")
         print("  Use --hf-token to provide token, or set HF_TOKEN env var")
     else:
-        from step_00_config import HF_MODEL_BASE_NAME
-        hf_model_name = f"{hf_username}/{HF_MODEL_BASE_NAME}-{run_name}"
+        from step_00_config import get_hf_model_base_name
+        hf_model_base_name = get_hf_model_base_name(model_name)
+        hf_model_name = f"{hf_username}/{hf_model_base_name}-{run_name}"
         print(f"  Pushing to: {hf_model_name}")
         
         # Merge and push in 16-bit
@@ -305,6 +310,7 @@ def main():
     print(f"\n[8/8] Saving training config...")
     training_config = load_detected_config()
     training_config.update({
+        "model_name": model_name,
         "run_name": run_name,
         "learning_rate": args.learning_rate,
         "epochs": args.epochs,

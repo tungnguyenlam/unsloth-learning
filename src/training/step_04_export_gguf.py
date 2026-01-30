@@ -30,7 +30,14 @@ def main():
     
     max_seq_length = get_max_seq_length()
     run_name = get_saved_run_name()
-    ollama_model_name = f"{OLLAMA_MODEL_BASE_NAME}-{run_name}"
+    
+    # Determine dynamic Ollama name
+    from step_00_config import get_hf_model_base_name, load_detected_config
+    config = load_detected_config()
+    model_name_used = config.get("model_name", MODEL_NAME)
+    hf_base = get_hf_model_base_name(model_name_used)
+    ollama_base = hf_base.replace("-military", "-mil")
+    ollama_model_name = f"{ollama_base}-{run_name}"
     
     print("=" * 60)
     print("STEP 04: EXPORT TO GGUF")
@@ -114,8 +121,14 @@ def main():
     
     if hf_token:
         print(f"\n[3/3] Pushing GGUF to HuggingFace...")
-        from step_00_config import HF_MODEL_BASE_NAME
-        hf_gguf_name = f"{hf_username}/{HF_MODEL_BASE_NAME}-{run_name}-GGUF"
+        
+        # Determine model base name dynamically from saved config
+        from step_00_config import get_hf_model_base_name, load_detected_config
+        config = load_detected_config()
+        model_name = config.get("model_name", MODEL_NAME)
+        
+        hf_model_base_name = get_hf_model_base_name(model_name)
+        hf_gguf_name = f"{hf_username}/{hf_model_base_name}-{run_name}-GGUF"
         print(f"  Pushing to: {hf_gguf_name}")
         
         # Push GGUF with Unsloth's method
