@@ -26,10 +26,17 @@ def main():
     parser = get_base_parser("Step 04: Export to GGUF")
     parser.add_argument("--quantization", type=str, default="q4_k_m",
                        help="Quantization method: q4_k_m, q8_0, f16, etc.")
+    parser.add_argument("--hf-model", type=str, default=None,
+                       help="HuggingFace model ID to load (e.g., username/model-name). Overrides local model check.")
+    parser.add_argument("--run-name", type=str, default=None,
+                       help="Override run name for output naming (useful if config is lost)")
+    parser.add_argument("--max-seq-length", type=int, default=None,
+                        help="Override max sequence length (default: 2048 or auto-detected)")
     args = parser.parse_args()
     
-    max_seq_length = get_max_seq_length()
-    run_name = get_saved_run_name()
+    # max_seq_length priority: CLI arg -> Config file -> Default constant
+    max_seq_length = args.max_seq_length or get_max_seq_length()
+    run_name = args.run_name or get_saved_run_name()
     
     # Determine dynamic Ollama name
     from step_00_config import get_hf_model_base_name, load_detected_config
@@ -45,22 +52,33 @@ def main():
     print(f"\nRun Name: {run_name}")
     print(f"Max Seq Length: {max_seq_length}")
     
-    ensure_dirs()
+    # Resolve HF Token explicitly (checking env var as fallback)
+    hf_token = args.hf_token or os.environ.get("HF_TOKEN")
     
-    if not os.path.exists(LORA_MODEL_DIR):
-        print(f"ERROR: LoRA model not found at: {LORA_MODEL_DIR}")
-        print("Run src/training/step_02_train.py first")
-        sys.exit(1)
+    # Determine model source
+    if args.hf_model:
+        model_source = args.hf_model
+        print(f"Loading from Hugging Face: {model_source}")
+    else:
+        if not os.path.exists(LORA_MODEL_DIR):
+            print(f"ERROR: LoRA model not found at: {LORA_MODEL_DIR}")
+            print("Run src/training/step_02_train.py first")
+            sys.exit(1)
+        model_source = LORA_MODEL_DIR
     
     # Load Model
-    print("\n[1/2] Loading trained model...")
+    print(f"\n[1/2] Loading trained model from {model_source}...")
     from unsloth import FastModel
     
-    model, tokenizer = FastModel.from_pretrained(
-        model_name=LORA_MODEL_DIR,
-        max_seq_length=max_seq_length,
-        load_in_4bit=LOAD_IN_4BIT,
-    )
+    load_kwargs = {
+        "model_name": model_source,
+        "max_seq_length": max_seq_length,
+        "load_in_4bit": LOAD_IN_4BIT,
+    }
+    if hf_token:
+        load_kwargs["token"] = hf_token
+
+    model, tokenizer = FastModel.from_pretrained(**load_kwargs)
     print("  Model loaded successfully")
     
     # Export to GGUF
@@ -116,7 +134,6 @@ def main():
     print(f"  Saved and organized in: {GGUF_MODEL_DIR}/")
     
     # Step 3: Push GGUF to HuggingFace
-    hf_token = args.hf_token
     hf_username = args.hf_username
     
     if hf_token:
